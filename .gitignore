@@ -1,0 +1,23 @@
+# .NET build output
+[Bb]in/
+[Oo]bj/
+[Aa]rtifacts/
+TestResults/
+*.nupkg
+*.snupkg
+
+# .NET user-specific files
+*.user
+*.suo
+*.userprefs
+*.csproj.user
+*.sln.DotSettings.user
+*.slnx.user
+
+# JetBrains Rider / IntelliJ
+.idea/
+.idea_modules/
+*.sln.iml
+
+# Visual Studio
+.vs/
