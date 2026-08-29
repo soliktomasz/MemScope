@@ -1,7 +1,10 @@
 using System.Collections.Specialized;
+using System.Runtime.CompilerServices;
 using MemoryProfiler.App.ViewModels;
+using MemoryProfiler.Contracts.Live;
 using MemoryProfiler.Contracts.Processes;
 using MemoryProfiler.Diagnostics.Processes;
+using MemoryProfiler.Diagnostics.Sessions;
 using Xunit;
 
 namespace MemoryProfiler.App.Tests.ViewModels;
@@ -268,6 +271,39 @@ public sealed class StartViewModelTests
         await showPicker;
     }
 
+    [Fact]
+    public async Task AttachingTheSelectedProcessOpensAndStartsALiveSession()
+    {
+        var discovery = StubDiscovery.Returning(
+            new ProcessInfo(4217, "SampleService", "10.0.0"));
+        using var picker = new ProcessPickerViewModel(discovery);
+        var session = new StubLiveSession();
+        var factory = new StubLiveSessionFactory(session);
+        using var start = new StartViewModel(
+            picker,
+            factory,
+            ImmediateUiDispatcher.Instance);
+        await picker.RefreshAsync();
+
+        Assert.False(start.AttachSelectedProcessCommand.CanExecute(null));
+        picker.SelectedProcess = Assert.Single(picker.Processes);
+        Assert.True(start.AttachSelectedProcessCommand.CanExecute(null));
+
+        await start.StartLiveSessionAsync();
+
+        Assert.Equal(4217, factory.ConnectedProcessId);
+        Assert.NotNull(start.LiveSession);
+        Assert.Equal("SampleService", start.LiveSession.ProcessName);
+        Assert.True(start.IsLiveSessionVisible);
+        Assert.False(start.IsStartVisible);
+
+        await start.CloseLiveSessionAsync();
+
+        Assert.Null(start.LiveSession);
+        Assert.True(start.IsStartVisible);
+        Assert.False(start.IsLiveSessionVisible);
+    }
+
     private sealed class StubDiscovery(
         Func<CancellationToken, Task<IReadOnlyList<ProcessInfo>>> discover) : IDotNetProcessDiscovery
     {
@@ -277,5 +313,40 @@ public sealed class StartViewModelTests
         public Task<IReadOnlyList<ProcessInfo>> GetProcessesAsync(
             CancellationToken cancellationToken = default) =>
             discover(cancellationToken);
+    }
+
+    private sealed class StubLiveSessionFactory(ILiveDiagnosticsSession session)
+        : ILiveDiagnosticsSessionFactory
+    {
+        public int? ConnectedProcessId { get; private set; }
+
+        public Task<ILiveDiagnosticsSession> ConnectAsync(
+            int processId,
+            CancellationToken cancellationToken = default)
+        {
+            ConnectedProcessId = processId;
+            return Task.FromResult(session);
+        }
+    }
+
+    private sealed class StubLiveSession : ILiveDiagnosticsSession
+    {
+        public int ProcessId => 4217;
+
+        public async IAsyncEnumerable<MemoryMetrics> ObserveMemoryAsync(
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<GcEvent> ObserveGcEventsAsync(
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }
