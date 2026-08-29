@@ -1,0 +1,170 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MemoryProfiler.App.ViewModels"
+             x:Class="MemoryProfiler.App.Views.LiveSessionView"
+             x:DataType="vm:LiveSessionViewModel"
+             x:CompileBindings="True">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.dashboard-title">
+      <Setter Property="FontSize" Value="24" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
+    </Style>
+    <Style Selector="TextBlock.section-label">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
+    </Style>
+    <Style Selector="TextBlock.metric-primary">
+      <Setter Property="FontFamily" Value="Cascadia Mono, Menlo, Consolas" />
+      <Setter Property="FontSize" Value="34" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
+    </Style>
+    <Style Selector="TextBlock.metric-value">
+      <Setter Property="FontFamily" Value="Cascadia Mono, Menlo, Consolas" />
+      <Setter Property="FontSize" Value="17" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
+    </Style>
+    <Style Selector="TextBlock.secondary">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
+    </Style>
+    <Style Selector="Button.dashboard-action">
+      <Setter Property="MinHeight" Value="36" />
+      <Setter Property="Padding" Value="15,7" />
+      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid Margin="32,26,32,28"
+        RowDefinitions="Auto,Auto,*"
+        RowSpacing="18">
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="20">
+      <StackPanel Spacing="4">
+        <TextBlock Classes="dashboard-title" Text="Live memory" />
+        <TextBlock Classes="secondary"
+                   FontSize="13"
+                   Text="{Binding ProcessDescription}" />
+      </StackPanel>
+      <StackPanel Grid.Column="1"
+                  Orientation="Horizontal"
+                  VerticalAlignment="Center"
+                  Spacing="14">
+        <TextBlock IsVisible="{Binding IsConnecting}"
+                   VerticalAlignment="Center"
+                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                   Text="Connecting" />
+        <TextBlock IsVisible="{Binding IsLive}"
+                   VerticalAlignment="Center"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource AppAccentBrush}"
+                   Text="Live" />
+        <TextBlock IsVisible="{Binding IsDisconnected}"
+                   VerticalAlignment="Center"
+                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                   Text="Disconnected" />
+        <Button Classes="dashboard-action"
+                Command="{Binding DisconnectCommand}"
+                Content="Disconnect" />
+        <Button Classes="dashboard-action"
+                IsVisible="{Binding IsDisconnected}"
+                Command="{Binding CloseCommand}"
+                Content="Choose another process" />
+      </StackPanel>
+    </Grid>
+
+    <Grid Grid.Row="1">
+      <ProgressBar Height="2"
+                   AutomationProperties.Name="Connecting to target process"
+                   AutomationProperties.LiveSetting="Polite"
+                   IsVisible="{Binding IsConnecting}"
+                   IsIndeterminate="True" />
+      <Border IsVisible="{Binding HasError}"
+              Padding="12,9"
+              CornerRadius="{DynamicResource AppCornerRadius}"
+              AutomationProperties.Name="{Binding ErrorMessage}"
+              AutomationProperties.LiveSetting="Assertive"
+              Background="{DynamicResource AppErrorSurfaceBrush}">
+        <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
+                   FontSize="13"
+                   TextWrapping="Wrap"
+                   Text="{Binding ErrorMessage}" />
+      </Border>
+      <TextBlock IsVisible="{Binding IsAwaitingMetrics}"
+                 HorizontalAlignment="Center"
+                 Margin="0,8"
+                 AutomationProperties.LiveSetting="Polite"
+                 Classes="secondary"
+                 Text="Waiting for the first runtime sample." />
+    </Grid>
+
+    <ScrollViewer Grid.Row="2"
+                  IsVisible="{Binding HasMetrics}"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Spacing="24">
+        <Grid ColumnDefinitions="3*,2*"
+              ColumnSpacing="30">
+          <StackPanel Spacing="7">
+            <TextBlock Classes="section-label" Text="MANAGED HEAP" />
+            <TextBlock Classes="metric-primary"
+                       AutomationProperties.Name="Managed heap size"
+                       Text="{Binding Heap.ManagedHeapSizeDisplay}" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Spacing="7">
+            <TextBlock Classes="section-label" Text="ALLOCATION RATE" />
+            <TextBlock Classes="metric-primary"
+                       AutomationProperties.Name="Allocation rate"
+                       Text="{Binding Allocation.AllocationRateDisplay}" />
+          </StackPanel>
+        </Grid>
+
+        <Border BorderBrush="{DynamicResource AppBorderBrush}"
+                BorderThickness="0,1,0,0">
+          <Grid Margin="0,18,0,0"
+                RowDefinitions="Auto,Auto,Auto,Auto"
+                ColumnDefinitions="2*,*,*"
+                RowSpacing="0">
+            <TextBlock Grid.Row="0" Classes="section-label" Text="GENERATION" />
+            <TextBlock Grid.Row="0" Grid.Column="1" Classes="section-label" Text="SIZE" />
+            <TextBlock Grid.Row="0" Grid.Column="2" Classes="section-label" Text="COLLECTIONS" />
+
+            <TextBlock Grid.Row="1" Margin="0,13" Foreground="{DynamicResource AppTextPrimaryBrush}" Text="Gen 0" />
+            <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,13" Classes="metric-value" Text="{Binding Generations.Generation0SizeDisplay}" />
+            <TextBlock Grid.Row="1" Grid.Column="2" Margin="0,13" Classes="metric-value" Text="{Binding Generations.Generation0Collections}" />
+
+            <TextBlock Grid.Row="2" Margin="0,13" Foreground="{DynamicResource AppTextPrimaryBrush}" Text="Gen 1" />
+            <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,13" Classes="metric-value" Text="{Binding Generations.Generation1SizeDisplay}" />
+            <TextBlock Grid.Row="2" Grid.Column="2" Margin="0,13" Classes="metric-value" Text="{Binding Generations.Generation1Collections}" />
+
+            <TextBlock Grid.Row="3" Margin="0,13" Foreground="{DynamicResource AppTextPrimaryBrush}" Text="Gen 2" />
+            <TextBlock Grid.Row="3" Grid.Column="1" Margin="0,13" Classes="metric-value" Text="{Binding Generations.Generation2SizeDisplay}" />
+            <TextBlock Grid.Row="3" Grid.Column="2" Margin="0,13" Classes="metric-value" Text="{Binding Generations.Generation2Collections}" />
+          </Grid>
+        </Border>
+
+        <Border BorderBrush="{DynamicResource AppBorderBrush}"
+                BorderThickness="0,1,0,0">
+          <Grid Margin="0,18,0,0"
+                ColumnDefinitions="*,*,*"
+                ColumnSpacing="26">
+            <StackPanel Spacing="7">
+              <TextBlock Classes="section-label" Text="LARGE OBJECT HEAP" />
+              <TextBlock Classes="metric-value" Text="{Binding Heap.LargeObjectHeapSizeDisplay}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="7">
+              <TextBlock Classes="section-label" Text="PINNED OBJECT HEAP" />
+              <TextBlock Classes="metric-value" Text="{Binding Heap.PinnedObjectHeapSizeDisplay}" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Spacing="7">
+              <TextBlock Classes="section-label" Text="PROMOTED BYTES" />
+              <TextBlock Classes="metric-value" Text="{Binding Heap.PromotedBytesDisplay}" />
+            </StackPanel>
+          </Grid>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>
