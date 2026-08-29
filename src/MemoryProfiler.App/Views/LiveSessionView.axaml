@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:MemoryProfiler.App.ViewModels"
+             xmlns:gc="using:MemoryProfiler.App.ViewModels.GcTimeline"
              x:Class="MemoryProfiler.App.Views.LiveSessionView"
              x:DataType="vm:LiveSessionViewModel"
              x:CompileBindings="True">
@@ -36,6 +37,19 @@
       <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
       <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
+    <Style Selector="TextBlock.mono-data">
+      <Setter Property="FontFamily" Value="Cascadia Mono, Menlo, Consolas" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
+    </Style>
+    <Style Selector="ListBox.gc-events">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="ListBox.gc-events ListBoxItem">
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Padding" Value="8,7" />
+      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
+    </Style>
   </UserControl.Styles>
 
   <Grid Margin="32,26,32,28"
@@ -43,7 +57,7 @@
         RowSpacing="18">
     <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="20">
       <StackPanel Spacing="4">
-        <TextBlock Classes="dashboard-title" Text="Live memory" />
+        <TextBlock Classes="dashboard-title" Text="Live diagnostics" />
         <TextBlock Classes="secondary"
                    FontSize="13"
                    Text="{Binding ProcessDescription}" />
@@ -92,19 +106,20 @@
                    TextWrapping="Wrap"
                    Text="{Binding ErrorMessage}" />
       </Border>
-      <TextBlock IsVisible="{Binding IsAwaitingMetrics}"
-                 HorizontalAlignment="Center"
-                 Margin="0,8"
-                 AutomationProperties.LiveSetting="Polite"
-                 Classes="secondary"
-                 Text="Waiting for the first runtime sample." />
     </Grid>
 
-    <ScrollViewer Grid.Row="2"
-                  IsVisible="{Binding HasMetrics}"
-                  VerticalScrollBarVisibility="Auto"
-                  HorizontalScrollBarVisibility="Disabled">
-      <StackPanel Spacing="24">
+    <TabControl Grid.Row="2">
+      <TabItem Header="Overview">
+        <Grid>
+          <TextBlock IsVisible="{Binding IsAwaitingMetrics}"
+                     HorizontalAlignment="Center"
+                     VerticalAlignment="Center"
+                     Classes="secondary"
+                     Text="Waiting for the first runtime sample." />
+          <ScrollViewer IsVisible="{Binding HasMetrics}"
+                        VerticalScrollBarVisibility="Auto"
+                        HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="0,18,0,0" Spacing="24">
         <Grid ColumnDefinitions="3*,2*"
               ColumnSpacing="30">
           <StackPanel Spacing="7">
@@ -164,7 +179,217 @@
             </StackPanel>
           </Grid>
         </Border>
-      </StackPanel>
-    </ScrollViewer>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+      </TabItem>
+
+      <TabItem Header="GC timeline">
+        <Grid Margin="0,18,0,0"
+              RowDefinitions="3*,2*"
+              RowSpacing="18">
+          <Grid Grid.Row="0" RowDefinitions="Auto,Auto,*" RowSpacing="12">
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*" ColumnSpacing="12">
+              <StackPanel Spacing="5">
+                <TextBlock Classes="section-label" Text="GENERATION" />
+                <ComboBox Width="150"
+                          IsEnabled="{Binding GcTimeline.HasEvents}"
+                          AutomationProperties.Name="Generation filter"
+                          ItemsSource="{Binding GcTimeline.GenerationFilters}"
+                          SelectedItem="{Binding GcTimeline.SelectedGenerationFilter}" />
+              </StackPanel>
+              <StackPanel Grid.Column="1" Spacing="5">
+                <TextBlock Classes="section-label" Text="MINIMUM PAUSE" />
+                <Grid ColumnDefinitions="110,Auto" ColumnSpacing="7">
+                  <TextBox Grid.Column="0"
+                           IsEnabled="{Binding GcTimeline.HasEvents}"
+                           AutomationProperties.Name="Minimum pause duration in milliseconds"
+                           Text="{Binding GcTimeline.MinimumPauseMilliseconds}" />
+                  <TextBlock Grid.Column="1"
+                             VerticalAlignment="Center"
+                             Classes="secondary"
+                             Text="ms" />
+                </Grid>
+              </StackPanel>
+              <StackPanel Grid.Column="2"
+                          HorizontalAlignment="Right"
+                          VerticalAlignment="Bottom"
+                          Margin="0,0,2,8"
+                          Orientation="Horizontal"
+                          Spacing="14">
+                <TextBlock Classes="secondary"
+                           Text="{Binding GcTimeline.FilteredEventCount, StringFormat='{}{0} shown'}" />
+                <TextBlock Classes="secondary"
+                           Text="{Binding GcTimeline.Generation2EventCount, StringFormat='{}{0} Gen 2'}" />
+                <TextBlock Classes="secondary"
+                           Text="{Binding GcTimeline.IneffectiveEventCount, StringFormat='{}{0} low reclaim'}" />
+              </StackPanel>
+            </Grid>
+
+            <Grid Grid.Row="1"
+                  Margin="8,0"
+                  ColumnDefinitions="100,65,80,105,105,95,*"
+                  ColumnSpacing="8">
+              <TextBlock Grid.Column="0" Classes="section-label" Text="TIME" />
+              <TextBlock Grid.Column="1" Classes="section-label" Text="GEN" />
+              <TextBlock Grid.Column="2" Classes="section-label" Text="PAUSE" />
+              <TextBlock Grid.Column="3" Classes="section-label" Text="HEAP BEFORE" />
+              <TextBlock Grid.Column="4" Classes="section-label" Text="HEAP AFTER" />
+              <TextBlock Grid.Column="5" Classes="section-label" Text="RECLAIMED" />
+              <TextBlock Grid.Column="6" Classes="section-label" Text="REASON" />
+            </Grid>
+
+            <Grid Grid.Row="2">
+              <Border IsVisible="{Binding GcTimeline.HasNoEvents}"
+                      BorderBrush="{DynamicResource AppBorderBrush}"
+                      BorderThickness="1"
+                      CornerRadius="{DynamicResource AppCornerRadius}"
+                      Padding="24">
+                <StackPanel HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="6">
+                  <TextBlock HorizontalAlignment="Center"
+                             FontWeight="SemiBold"
+                             Foreground="{DynamicResource AppTextPrimaryBrush}"
+                             Text="No GC events yet" />
+                  <TextBlock HorizontalAlignment="Center"
+                             Classes="secondary"
+                             Text="Events appear here as the runtime completes collections." />
+                </StackPanel>
+              </Border>
+
+              <Border IsVisible="{Binding GcTimeline.HasNoFilteredEvents}"
+                      BorderBrush="{DynamicResource AppBorderBrush}"
+                      BorderThickness="1"
+                      CornerRadius="{DynamicResource AppCornerRadius}"
+                      Padding="24">
+                <StackPanel HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="6">
+                  <TextBlock HorizontalAlignment="Center"
+                             FontWeight="SemiBold"
+                             Foreground="{DynamicResource AppTextPrimaryBrush}"
+                             Text="No events match these filters" />
+                  <TextBlock HorizontalAlignment="Center"
+                             Classes="secondary"
+                             Text="Lower the pause threshold or choose another generation." />
+                </StackPanel>
+              </Border>
+
+              <ListBox Classes="gc-events"
+                       IsVisible="{Binding GcTimeline.HasFilteredEvents}"
+                       AutomationProperties.Name="Garbage collection events"
+                       ItemsSource="{Binding GcTimeline.FilteredEvents}"
+                       SelectedItem="{Binding GcTimeline.SelectedEvent}">
+                <ListBox.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <VirtualizingStackPanel />
+                  </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="gc:GcEventRowViewModel">
+                    <Grid ColumnDefinitions="100,65,80,105,105,95,*" ColumnSpacing="8">
+                      <TextBlock Grid.Column="0" Classes="mono-data" Text="{Binding TimeDisplay}" />
+                      <TextBlock Grid.Column="1" Classes="mono-data" Text="{Binding GenerationDisplay}" />
+                      <TextBlock Grid.Column="2" Classes="mono-data" Text="{Binding PauseDisplay}" />
+                      <TextBlock Grid.Column="3" Classes="mono-data" Text="{Binding HeapBeforeDisplay}" />
+                      <TextBlock Grid.Column="4" Classes="mono-data" Text="{Binding HeapAfterDisplay}" />
+                      <TextBlock Grid.Column="5"
+                                 Classes="mono-data"
+                                 Text="{Binding EffectivenessDisplay}" />
+                      <TextBlock Grid.Column="6"
+                                 Foreground="{DynamicResource AppTextPrimaryBrush}"
+                                 TextTrimming="CharacterEllipsis"
+                                 Text="{Binding Reason}" />
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </Grid>
+          </Grid>
+
+          <Border Grid.Row="1"
+                  BorderBrush="{DynamicResource AppBorderBrush}"
+                  BorderThickness="0,1,0,0"
+                  Padding="0,18,0,0">
+            <Grid>
+              <StackPanel IsVisible="{Binding GcTimeline.HasNoSelection}"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center"
+                          Spacing="6">
+                <TextBlock HorizontalAlignment="Center"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource AppTextPrimaryBrush}"
+                           Text="Select a collection" />
+                <TextBlock HorizontalAlignment="Center"
+                           TextAlignment="Center"
+                           TextWrapping="Wrap"
+                           Classes="secondary"
+                           Text="Inspect pause duration, collection reason, and heap effectiveness." />
+              </StackPanel>
+
+              <Grid IsVisible="{Binding GcTimeline.HasSelection}"
+                    ColumnDefinitions="2*,2*,3*"
+                    ColumnSpacing="30">
+                <StackPanel Grid.Column="0" Spacing="4">
+                  <TextBlock Classes="section-label" Text="SELECTED COLLECTION" />
+                  <TextBlock FontSize="20"
+                             FontWeight="SemiBold"
+                             Foreground="{DynamicResource AppTextPrimaryBrush}"
+                             Text="{Binding GcTimeline.SelectedEvent.GenerationDisplay}" />
+                  <TextBlock Classes="secondary"
+                             Text="{Binding GcTimeline.SelectedEvent.TimeDisplay}" />
+                  <TextBlock Margin="0,8,0,0"
+                             Foreground="{DynamicResource AppTextPrimaryBrush}"
+                             TextWrapping="Wrap"
+                             Text="{Binding GcTimeline.SelectedEvent.Reason}" />
+                </StackPanel>
+
+                <Grid Grid.Column="1"
+                      ColumnDefinitions="*,*"
+                      ColumnSpacing="20">
+                  <StackPanel Spacing="5">
+                    <TextBlock Classes="section-label" Text="PAUSE" />
+                    <TextBlock Classes="metric-value"
+                               Text="{Binding GcTimeline.SelectedEvent.PauseDisplay}" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Spacing="5">
+                    <TextBlock Classes="section-label" Text="RECLAIMED" />
+                    <TextBlock Classes="metric-value"
+                               Text="{Binding GcTimeline.SelectedEvent.ReclaimedDisplay}" />
+                  </StackPanel>
+                </Grid>
+
+                <StackPanel Grid.Column="2" Spacing="10">
+                  <TextBlock Classes="section-label" Text="HEAP CHANGE" />
+                  <Grid ColumnDefinitions="64,*" RowDefinitions="Auto,Auto" RowSpacing="9" ColumnSpacing="10">
+                    <TextBlock Grid.Row="0" Classes="secondary" Text="Before" />
+                    <ProgressBar Grid.Row="0" Grid.Column="1"
+                                 Height="8"
+                                 Minimum="0"
+                                 Maximum="1"
+                                 Value="{Binding GcTimeline.SelectedEvent.HeapBeforeRatio}" />
+                    <TextBlock Grid.Row="1" Classes="secondary" Text="After" />
+                    <ProgressBar Grid.Row="1" Grid.Column="1"
+                                 Height="8"
+                                 Minimum="0"
+                                 Maximum="1"
+                                 Value="{Binding GcTimeline.SelectedEvent.HeapAfterRatio}" />
+                  </Grid>
+                  <Grid ColumnDefinitions="*,*">
+                    <TextBlock Classes="mono-data"
+                               Text="{Binding GcTimeline.SelectedEvent.HeapBeforeDisplay}" />
+                    <TextBlock Grid.Column="1"
+                               HorizontalAlignment="Right"
+                               Classes="mono-data"
+                               Text="{Binding GcTimeline.SelectedEvent.HeapAfterDisplay}" />
+                  </Grid>
+                </StackPanel>
+              </Grid>
+            </Grid>
+          </Border>
+        </Grid>
+      </TabItem>
+    </TabControl>
   </Grid>
 </UserControl>

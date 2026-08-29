@@ -85,21 +85,31 @@ public sealed class LiveSessionViewModelTests
     }
 
     [Fact]
-    public async Task StartDrainsGcEventsWithoutRetainingThem()
+    public async Task StartPublishesGcEventsToTheBoundedTimeline()
     {
-        const int eventCount = 10_000;
+        var gcEvents = Enumerable.Range(0, 4)
+            .Select(index => new GcEvent(
+                DateTimeOffset.UtcNow.AddSeconds(index),
+                index % 3,
+                TimeSpan.FromMilliseconds(index + 1),
+                1024,
+                768,
+                "Test"))
+            .ToArray();
         var session = new StubSession(
             [CreateMetrics(managedHeapSize: 4096)],
-            gcEventCount: eventCount);
+            gcEvents: gcEvents);
         await using var viewModel = new LiveSessionViewModel(
             4217,
             "SampleService",
             new StubSessionFactory(session),
-            ImmediateUiDispatcher.Instance);
+            ImmediateUiDispatcher.Instance,
+            maximumGcEvents: 3);
 
         await viewModel.StartAsync();
 
-        Assert.Equal(eventCount, session.GcEventsObserved);
+        Assert.Equal(4, session.GcEventsObserved);
+        Assert.Equal([2d, 3d, 4d], viewModel.GcTimeline.FilteredEvents.Select(x => x.PauseMilliseconds));
         Assert.Single(viewModel.MetricHistory);
     }
 
@@ -264,18 +274,18 @@ public sealed class LiveSessionViewModelTests
     {
         private readonly IReadOnlyList<MemoryMetrics> _metrics;
         private readonly bool _waitForCancellation;
-        private readonly int _gcEventCount;
+        private readonly IReadOnlyList<GcEvent> _gcEvents;
         private readonly Exception? _observationFailure;
 
         public StubSession(
             IReadOnlyList<MemoryMetrics>? metrics = null,
             bool waitForCancellation = false,
-            int gcEventCount = 0,
+            IReadOnlyList<GcEvent>? gcEvents = null,
             Exception? observationFailure = null)
         {
             _metrics = metrics ?? [];
             _waitForCancellation = waitForCancellation;
-            _gcEventCount = gcEventCount;
+            _gcEvents = gcEvents ?? [];
             _observationFailure = observationFailure;
         }
 
@@ -314,16 +324,10 @@ public sealed class LiveSessionViewModelTests
         public async IAsyncEnumerable<GcEvent> ObserveGcEventsAsync(
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            for (var index = 0; index < _gcEventCount; index++)
+            foreach (var gcEvent in _gcEvents)
             {
                 GcEventsObserved++;
-                yield return new GcEvent(
-                    DateTimeOffset.UtcNow,
-                    0,
-                    TimeSpan.Zero,
-                    0,
-                    0,
-                    "Test");
+                yield return gcEvent;
             }
 
             if (_waitForCancellation)
