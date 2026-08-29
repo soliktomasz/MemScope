@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
 using MemoryProfiler.App.ViewModels.Overview;
+using MemoryProfiler.App.ViewModels.GcTimeline;
 using MemoryProfiler.Contracts.Live;
 using MemoryProfiler.Diagnostics.Sessions;
 
@@ -9,6 +10,7 @@ namespace MemoryProfiler.App.ViewModels;
 public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
 {
     private const int MaximumMetricSamples = 3_600;
+    private const int MaximumGcEvents = 3_600;
 
     private readonly ILiveDiagnosticsSessionFactory _sessionFactory;
     private readonly IUiDispatcher _uiDispatcher;
@@ -34,6 +36,7 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         ILiveDiagnosticsSessionFactory sessionFactory,
         IUiDispatcher uiDispatcher,
         int maximumMetricSamples = MaximumMetricSamples,
+        int maximumGcEvents = MaximumGcEvents,
         Func<Task>? closeSession = null)
     {
         if (processId <= 0)
@@ -49,12 +52,18 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(maximumMetricSamples));
         }
 
+        if (maximumGcEvents <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumGcEvents));
+        }
+
         ProcessId = processId;
         ProcessName = processName;
         _sessionFactory = sessionFactory;
         _uiDispatcher = uiDispatcher;
         _maximumMetricSamples = maximumMetricSamples;
         MetricHistory = new ReadOnlyObservableCollection<MemoryMetrics>(_metricHistory);
+        GcTimeline = new GcTimelineViewModel(maximumGcEvents);
         _disconnectCommand = new AsyncCommand(DisconnectAsync, () => IsConnecting || IsLive);
         _closeCommand = new AsyncCommand(
             closeSession ?? DisconnectAsync,
@@ -72,6 +81,8 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
     public AllocationRateViewModel Allocation { get; } = new();
 
     public GenerationSummaryViewModel Generations { get; } = new();
+
+    public GcTimelineViewModel GcTimeline { get; }
 
     public ReadOnlyObservableCollection<MemoryMetrics> MetricHistory { get; }
 
@@ -153,7 +164,7 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
             }).ConfigureAwait(false);
 
             var memoryObservation = ObserveMemoryAsync(session, cancellationToken);
-            var gcObservation = DrainGcEventsAsync(session, cancellationToken);
+            var gcObservation = ObserveGcEventsAsync(session, cancellationToken);
             await Task.WhenAll(memoryObservation, gcObservation).ConfigureAwait(false);
 
             await PublishAsync(SetDisconnected).ConfigureAwait(false);
@@ -190,14 +201,15 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         }
     }
 
-    private static async Task DrainGcEventsAsync(
+    private async Task ObserveGcEventsAsync(
         ILiveDiagnosticsSession session,
         CancellationToken cancellationToken)
     {
-        await foreach (var _ in session
+        await foreach (var gcEvent in session
                            .ObserveGcEventsAsync(cancellationToken)
                            .ConfigureAwait(false))
         {
+            await PublishAsync(() => GcTimeline.Apply(gcEvent)).ConfigureAwait(false);
         }
     }
 
