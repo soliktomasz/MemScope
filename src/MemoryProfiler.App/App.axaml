@@ -1,6 +1,38 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="MemoryProfiler.App.App">
+             x:Class="MemoryProfiler.App.App"
+             RequestedThemeVariant="Default">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="AppBackgroundBrush" Color="#F5F7FA" />
+          <SolidColorBrush x:Key="AppSurfaceBrush" Color="#FCFDFE" />
+          <SolidColorBrush x:Key="AppSurfaceSubtleBrush" Color="#EDF1F5" />
+          <SolidColorBrush x:Key="AppBorderBrush" Color="#D6DCE4" />
+          <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="#171A1F" />
+          <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="#596270" />
+          <SolidColorBrush x:Key="AppAccentBrush" Color="#2F6FEB" />
+          <SolidColorBrush x:Key="AppAccentForegroundBrush" Color="#F9FBFF" />
+          <SolidColorBrush x:Key="AppErrorSurfaceBrush" Color="#FCE8E8" />
+          <SolidColorBrush x:Key="AppErrorTextBrush" Color="#8F1D1D" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="AppBackgroundBrush" Color="#111318" />
+          <SolidColorBrush x:Key="AppSurfaceBrush" Color="#191C22" />
+          <SolidColorBrush x:Key="AppSurfaceSubtleBrush" Color="#232730" />
+          <SolidColorBrush x:Key="AppBorderBrush" Color="#373D48" />
+          <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="#F1F4F7" />
+          <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="#AAB3BF" />
+          <SolidColorBrush x:Key="AppAccentBrush" Color="#5B8DEF" />
+          <SolidColorBrush x:Key="AppAccentForegroundBrush" Color="#0E172A" />
+          <SolidColorBrush x:Key="AppErrorSurfaceBrush" Color="#3A2024" />
+          <SolidColorBrush x:Key="AppErrorTextBrush" Color="#FFB7B7" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+      <CornerRadius x:Key="AppCornerRadius">4</CornerRadius>
+    </ResourceDictionary>
+  </Application.Resources>
   <Application.Styles>
     <FluentTheme />
   </Application.Styles>
