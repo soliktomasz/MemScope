@@ -27,6 +27,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MemoryProfiler.App.Tests", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MemoryProfiler.Contracts.Tests", "tests\MemoryProfiler.Contracts.Tests\MemoryProfiler.Contracts.Tests.csproj", "{14C619E5-49CF-4977-A46F-E29695C05FF3}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LiveDiagnosticsTarget", "tests\MemoryProfiler.Diagnostics.Tests\LiveDiagnosticsTarget\LiveDiagnosticsTarget.csproj", "{28744081-7F4A-4954-9738-A83EAD8A7E61}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -157,6 +159,18 @@ Global
 		{14C619E5-49CF-4977-A46F-E29695C05FF3}.Release|x64.Build.0 = Release|Any CPU
 		{14C619E5-49CF-4977-A46F-E29695C05FF3}.Release|x86.ActiveCfg = Release|Any CPU
 		{14C619E5-49CF-4977-A46F-E29695C05FF3}.Release|x86.Build.0 = Release|Any CPU
+		{28744081-7F4A-4954-9738-A83EAD8A7E61}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{28744081-7F4A-4954-9738-A83EAD8A7E61}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{28744081-7F4A-4954-9738-A83EAD8A7E61}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{28744081-7F4A-4954-9738-A83EAD8A7E61}.Debug|x64.Build.0 = Debug|Any CPU
+		{28744081-7F4A-4954-9738-A83EAD8A7E61}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{28744081-7F4A-4954-9738-A83EAD8A7E61}.Debug|x86.Build.0 = Debug|Any CPU
+		{28744081-7F4A-4954-9738-A83EAD8A7E61}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{28744081-7F4A-4954-9738-A83EAD8A7E61}.Release|Any CPU.Build.0 = Release|Any CPU
+		{28744081-7F4A-4954-9738-A83EAD8A7E61}.Release|x64.ActiveCfg = Release|Any CPU
+		{28744081-7F4A-4954-9738-A83EAD8A7E61}.Release|x64.Build.0 = Release|Any CPU
+		{28744081-7F4A-4954-9738-A83EAD8A7E61}.Release|x86.ActiveCfg = Release|Any CPU
+		{28744081-7F4A-4954-9738-A83EAD8A7E61}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -172,5 +186,6 @@ Global
 		{1C24BE4F-4F1D-4DC6-BD14-0AFA2F82CC90} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{8B2FB509-A04A-4C18-9B4F-A315993EE96F} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{14C619E5-49CF-4977-A46F-E29695C05FF3} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{28744081-7F4A-4954-9738-A83EAD8A7E61} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

@@ -14,6 +14,11 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Remove="LiveDiagnosticsTarget/**" />
+    <None Remove="LiveDiagnosticsTarget/**" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../../src/MemoryProfiler.Diagnostics/MemoryProfiler.Diagnostics.csproj" />
+    <ProjectReference Include="LiveDiagnosticsTarget/LiveDiagnosticsTarget.csproj" />
   </ItemGroup>
 </Project>
