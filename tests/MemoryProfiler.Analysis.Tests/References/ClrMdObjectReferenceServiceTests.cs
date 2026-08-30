@@ -327,6 +327,7 @@ public sealed class ClrMdObjectReferenceServiceTests
         public Action? OnIncomingEnumerated { get; set; }
         public List<ObjectReference> Outgoing { get; } = [];
         public List<ObjectReference> Incoming { get; } = [];
+        public List<ClrRootData> Roots { get; } = [];
 
         public Generation? GetGeneration(ulong address) => null;
 
@@ -343,6 +344,8 @@ public sealed class ClrMdObjectReferenceServiceTests
             OnIncomingEnumerated?.Invoke();
             return Incoming;
         }
+
+        public IEnumerable<ClrRootData> EnumerateRoots() => Roots;
 
         public IEnumerable<HeapObjectData> EnumerateObjects() => [];
 

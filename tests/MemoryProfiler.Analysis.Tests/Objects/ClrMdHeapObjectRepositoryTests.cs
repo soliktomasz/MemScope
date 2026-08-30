@@ -267,6 +267,8 @@ public sealed class ClrMdHeapObjectRepositoryTests
             ulong targetAddress,
             CancellationToken cancellationToken) => [];
 
+        public IEnumerable<ClrRootData> EnumerateRoots() => [];
+
         public IEnumerable<HeapObjectData> EnumerateObjects()
         {
             foreach (var heapObject in objects)

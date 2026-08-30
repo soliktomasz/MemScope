@@ -3,6 +3,7 @@ using System.Globalization;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
+using MemoryProfiler.Analysis.Roots;
 using MemoryProfiler.App.ViewModels.Objects;
 using MemoryProfiler.App.ViewModels.Overview;
 using MemoryProfiler.App.ViewModels.Types;
@@ -17,6 +18,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
     private readonly AsyncCommand _closeCommand;
     private readonly RelayCommand<object> _showOutgoingReferencesCommand;
     private readonly RelayCommand<object> _showIncomingReferencesCommand;
+    private readonly RelayCommand<object> _showPathToRootCommand;
     private HeapSnapshot? _snapshot;
     private string? _errorMessage;
     private bool _isLoading;
@@ -26,12 +28,14 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         IHeapSnapshotLoader loader,
         IHeapObjectRepository objectRepository,
         IObjectReferenceService referenceService,
+        IGcRootService gcRootService,
         IUiDispatcher uiDispatcher,
         Func<Task>? close = null)
     {
         ArgumentNullException.ThrowIfNull(loader);
         ArgumentNullException.ThrowIfNull(objectRepository);
         ArgumentNullException.ThrowIfNull(referenceService);
+        ArgumentNullException.ThrowIfNull(gcRootService);
         ArgumentNullException.ThrowIfNull(uiDispatcher);
         _loader = loader;
         _uiDispatcher = uiDispatcher;
@@ -42,8 +46,12 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         _showIncomingReferencesCommand = new RelayCommand<object>(
             ShowIncomingReferences,
             parameter => HasSnapshot && CanNavigateFrom(parameter));
+        _showPathToRootCommand = new RelayCommand<object>(
+            ShowPathToRoot,
+            parameter => HasSnapshot && CanNavigateFrom(parameter));
         ObjectInstances = new ObjectInstancesViewModel(objectRepository, uiDispatcher);
         ObjectReferences = new ObjectReferencesViewModel(referenceService, uiDispatcher);
+        GcRoots = new GcRootsViewModel(gcRootService, uiDispatcher);
         Types.PropertyChanged += OnTypesPropertyChanged;
     }
 
@@ -53,6 +61,8 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
 
     public ObjectReferencesViewModel ObjectReferences { get; }
 
+    public GcRootsViewModel GcRoots { get; }
+
     public System.Windows.Input.ICommand CloseCommand => _closeCommand;
 
     public System.Windows.Input.ICommand ShowOutgoingReferencesCommand =>
@@ -60,6 +70,9 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
 
     public System.Windows.Input.ICommand ShowIncomingReferencesCommand =>
         _showIncomingReferencesCommand;
+
+    public System.Windows.Input.ICommand ShowPathToRootCommand =>
+        _showPathToRootCommand;
 
     public bool IsLoading
     {
@@ -152,6 +165,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         // A new snapshot replaces the previous analysis; any references still
         // shown belong to the old dump and must not survive it.
         await ObjectReferences.ClearAsync().ConfigureAwait(false);
+        await GcRoots.ClearAsync().ConfigureAwait(false);
 
         try
         {
@@ -209,6 +223,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
     {
         await ObjectInstances.DisposeAsync();
         await ObjectReferences.DisposeAsync();
+        await GcRoots.DisposeAsync();
     }
 
     private void OnTypesPropertyChanged(object? sender, PropertyChangedEventArgs eventArgs)
@@ -252,6 +267,36 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
     public void ShowIncomingReferences(object? parameter) =>
         ShowReferences(parameter, ReferenceDirection.Incoming);
 
+    public void ShowPathToRoot(object? parameter)
+    {
+        var snapshot = _snapshot;
+        if (snapshot is null || !TryResolveEndpoint(parameter, out var address, out var typeName))
+        {
+            return;
+        }
+
+        _ = ShowPathToRootAsync(snapshot, typeName, address);
+    }
+
+    private async Task ShowPathToRootAsync(
+        HeapSnapshot snapshot,
+        string typeName,
+        ulong address)
+    {
+        try
+        {
+            await GcRoots.ShowAsync(snapshot, typeName, address).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer navigation or snapshot closure superseded this one.
+        }
+        catch (ObjectDisposedException)
+        {
+            // The snapshot was closed while the command was executing.
+        }
+    }
+
     private void ShowReferences(object? parameter, ReferenceDirection direction)
     {
         var snapshot = _snapshot;
@@ -290,6 +335,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         {
             HeapObjectRowViewModel => true,
             ObjectReferenceRowViewModel { CanNavigate: true } => true,
+            GcRootRowViewModel { CanNavigate: true } => true,
             _ => false,
         };
 
@@ -307,6 +353,10 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
             case ObjectReferenceRowViewModel reference when reference.CanNavigate:
                 address = reference.EndpointAddress;
                 typeName = reference.EndpointTypeName;
+                return true;
+            case GcRootRowViewModel pathRow when pathRow.CanNavigate:
+                address = pathRow.EndpointAddress;
+                typeName = pathRow.EndpointTypeName;
                 return true;
             default:
                 address = 0;

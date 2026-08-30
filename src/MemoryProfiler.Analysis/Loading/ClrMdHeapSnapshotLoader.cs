@@ -160,7 +160,14 @@ internal interface IHeapDumpSource : IDisposable
     IEnumerable<ObjectReference> EnumerateIncomingReferences(
         ulong targetAddress,
         CancellationToken cancellationToken);
+
+    IEnumerable<ClrRootData> EnumerateRoots();
 }
+
+internal readonly record struct ClrRootData(
+    ulong ObjectAddress,
+    ClrRootKind Kind,
+    string? Name);
 
 internal sealed class ClrMdHeapDumpSourceFactory : IHeapDumpSourceFactory
 {
@@ -310,6 +317,115 @@ internal sealed class ClrMdHeapDumpSource : IHeapDumpSource
                 Name: RootKindLabel(root.RootKind),
                 SourceTypeName: null,
                 TargetTypeName: rootObject.Type?.Name);
+        }
+    }
+
+    public IEnumerable<ClrRootData> EnumerateRoots()
+    {
+        Dictionary<ulong, string>? staticNames = null;
+        foreach (var root in _runtime.Heap.EnumerateRoots())
+        {
+            var rootObject = root.Object;
+            if (rootObject.IsNull ||
+                !rootObject.IsValid ||
+                rootObject.IsFree ||
+                rootObject.Address == 0)
+            {
+                continue;
+            }
+
+            var name = root.RootKind is ClrRootKind.StaticVar or ClrRootKind.ThreadStaticVar
+                ? (staticNames ??= BuildStaticFieldNameMap())
+                    .TryGetValue(rootObject.Address, out var fieldName)
+                    ? fieldName
+                    : null
+                : null;
+
+            yield return new ClrRootData(
+                rootObject.Address,
+                root.RootKind,
+                name);
+        }
+    }
+
+    // Static roots do not carry a field name in ClrMD, so the declaring
+    // "Type.field" is resolved once per dump by matching static field values
+    // against the root's object address. Built lazily: dumps whose root set has
+    // no static roots never pay for the metadata walk.
+    private Dictionary<ulong, string> BuildStaticFieldNameMap()
+    {
+        var names = new Dictionary<ulong, string>();
+        var domains = _runtime.AppDomains;
+        var threads = _runtime.Threads;
+        foreach (var module in _runtime.EnumerateModules())
+        {
+            foreach (var type in module.EnumerateTypesWithStaticFields())
+            {
+                foreach (var field in type.StaticFields)
+                {
+                    if (!field.IsObjectReference)
+                    {
+                        continue;
+                    }
+
+                    foreach (var domain in domains)
+                    {
+                        AddStaticName(names, ReadObjectSafely(field, domain), $"{type.Name}.{field.Name}");
+                    }
+                }
+
+                foreach (var field in type.ThreadStaticFields)
+                {
+                    if (!field.IsObjectReference)
+                    {
+                        continue;
+                    }
+
+                    foreach (var thread in threads)
+                    {
+                        AddStaticName(names, ReadObjectSafely(field, thread), $"{type.Name}.{field.Name}");
+                    }
+                }
+            }
+        }
+
+        return names;
+    }
+
+    private static ClrObject ReadObjectSafely(ClrStaticField field, ClrAppDomain domain)
+    {
+        try
+        {
+            return field.ReadObject(domain);
+        }
+        catch
+        {
+            // Uninitialized or unreadable static fields carry no object.
+            return default;
+        }
+    }
+
+    private static ClrObject ReadObjectSafely(ClrThreadStaticField field, ClrThread thread)
+    {
+        try
+        {
+            return field.ReadObject(thread);
+        }
+        catch
+        {
+            // Uninitialized or unreadable thread-static fields carry no object.
+            return default;
+        }
+    }
+
+    private static void AddStaticName(
+        Dictionary<ulong, string> names,
+        ClrObject value,
+        string name)
+    {
+        if (!value.IsNull && value.IsValid && value.Address != 0)
+        {
+            names.TryAdd(value.Address, name);
         }
     }
 
