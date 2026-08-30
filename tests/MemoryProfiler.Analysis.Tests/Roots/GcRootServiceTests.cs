@@ -329,7 +329,10 @@ public sealed class GcRootServiceTests
 
         var service = new GcRootService(new StubHeapDumpSourceFactory(source));
 
-        var roots = await service.FindRootsAsync(Snapshot(), 0x1000UL + (ulong)count);
+        // The chain covers 0x1000 .. 0x1000 + (count - 1); the target at the end
+        // of the chain is 501 hops away, beyond the 500-hop limit.
+        var roots = await service.FindRootsAsync(
+            Snapshot(), 0x1000UL + (ulong)(count - 1));
 
         Assert.Empty(roots);
     }
@@ -565,7 +568,8 @@ public sealed class GcRootServiceTests
             ulong targetAddress,
             CancellationToken cancellationToken) => [];
 
-        public IEnumerable<ClrRootData> EnumerateRoots() => Roots;
+        public IEnumerable<ClrRootData> EnumerateRoots(
+            CancellationToken cancellationToken) => Roots;
 
         public IEnumerable<HeapObjectData> EnumerateObjects() => [];
 

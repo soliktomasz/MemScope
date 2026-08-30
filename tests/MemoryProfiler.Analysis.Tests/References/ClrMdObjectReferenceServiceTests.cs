@@ -345,7 +345,8 @@ public sealed class ClrMdObjectReferenceServiceTests
             return Incoming;
         }
 
-        public IEnumerable<ClrRootData> EnumerateRoots() => Roots;
+        public IEnumerable<ClrRootData> EnumerateRoots(
+            CancellationToken cancellationToken) => Roots;
 
         public IEnumerable<HeapObjectData> EnumerateObjects() => [];
 

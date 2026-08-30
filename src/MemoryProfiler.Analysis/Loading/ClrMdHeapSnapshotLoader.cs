@@ -161,7 +161,7 @@ internal interface IHeapDumpSource : IDisposable
         ulong targetAddress,
         CancellationToken cancellationToken);
 
-    IEnumerable<ClrRootData> EnumerateRoots();
+    IEnumerable<ClrRootData> EnumerateRoots(CancellationToken cancellationToken);
 }
 
 internal readonly record struct ClrRootData(
@@ -320,11 +320,19 @@ internal sealed class ClrMdHeapDumpSource : IHeapDumpSource
         }
     }
 
-    public IEnumerable<ClrRootData> EnumerateRoots()
+    public IEnumerable<ClrRootData> EnumerateRoots(CancellationToken cancellationToken)
     {
-        Dictionary<ulong, string>? staticNames = null;
+        // Static and thread-static field values are roots by definition, but
+        // dumps do not always report them: the runtime's root set may only
+        // carry a subset (on .NET Core, mutable statics frequently are absent
+        // from dump root enumeration). Resolve the field values up front so
+        // every static retention path is surfaced, and name any runtime
+        // reported static roots with the same map.
+        var (staticNames, threadStaticNames) = BuildStaticFieldNameMap(cancellationToken);
+        var reported = new HashSet<ulong>();
         foreach (var root in _runtime.Heap.EnumerateRoots())
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var rootObject = root.Object;
             if (rootObject.IsNull ||
                 !rootObject.IsValid ||
@@ -334,33 +342,74 @@ internal sealed class ClrMdHeapDumpSource : IHeapDumpSource
                 continue;
             }
 
-            var name = root.RootKind is ClrRootKind.StaticVar or ClrRootKind.ThreadStaticVar
-                ? (staticNames ??= BuildStaticFieldNameMap())
-                    .TryGetValue(rootObject.Address, out var fieldName)
-                    ? fieldName
-                    : null
-                : null;
+            if (root.RootKind is ClrRootKind.StaticVar or ClrRootKind.ThreadStaticVar)
+            {
+                reported.Add(rootObject.Address);
+            }
 
             yield return new ClrRootData(
                 rootObject.Address,
                 root.RootKind,
-                name);
+                Name: StaticName(staticNames, threadStaticNames, root));
+        }
+
+        foreach (var pair in staticNames)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!reported.Contains(pair.Key))
+            {
+                yield return new ClrRootData(pair.Key, ClrRootKind.StaticVar, pair.Value);
+            }
+        }
+
+        foreach (var pair in threadStaticNames)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!reported.Contains(pair.Key))
+            {
+                yield return new ClrRootData(pair.Key, ClrRootKind.ThreadStaticVar, pair.Value);
+            }
         }
     }
 
-    // Static roots do not carry a field name in ClrMD, so the declaring
-    // "Type.field" is resolved once per dump by matching static field values
-    // against the root's object address. Built lazily: dumps whose root set has
-    // no static roots never pay for the metadata walk.
-    private Dictionary<ulong, string> BuildStaticFieldNameMap()
+    private static string? StaticName(
+        IReadOnlyDictionary<ulong, string> staticNames,
+        IReadOnlyDictionary<ulong, string> threadStaticNames,
+        ClrRoot root)
     {
-        var names = new Dictionary<ulong, string>();
+        if (root.RootKind == ClrRootKind.ThreadStaticVar)
+        {
+            return threadStaticNames.TryGetValue(root.Object.Address, out var threadName)
+                ? threadName
+                : null;
+        }
+
+        if (root.RootKind == ClrRootKind.StaticVar)
+        {
+            return staticNames.TryGetValue(root.Object.Address, out var name)
+                ? name
+                : null;
+        }
+
+        return null;
+    }
+
+    // Static roots do not carry a field name in ClrMD, so the declaring
+    // "Type.field" is resolved by matching static field values against the
+    // object addresses. The same map feeds the merge of unreported statics.
+    private (Dictionary<ulong, string> Static, Dictionary<ulong, string> ThreadStatic)
+        BuildStaticFieldNameMap(CancellationToken cancellationToken)
+    {
+        var staticNames = new Dictionary<ulong, string>();
+        var threadStaticNames = new Dictionary<ulong, string>();
         var domains = _runtime.AppDomains;
         var threads = _runtime.Threads;
         foreach (var module in _runtime.EnumerateModules())
         {
+            cancellationToken.ThrowIfCancellationRequested();
             foreach (var type in module.EnumerateTypesWithStaticFields())
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 foreach (var field in type.StaticFields)
                 {
                     if (!field.IsObjectReference)
@@ -370,7 +419,10 @@ internal sealed class ClrMdHeapDumpSource : IHeapDumpSource
 
                     foreach (var domain in domains)
                     {
-                        AddStaticName(names, ReadObjectSafely(field, domain), $"{type.Name}.{field.Name}");
+                        AddStaticName(
+                            staticNames,
+                            ReadObjectSafely(field, domain),
+                            $"{type.Name}.{field.Name}");
                     }
                 }
 
@@ -383,13 +435,16 @@ internal sealed class ClrMdHeapDumpSource : IHeapDumpSource
 
                     foreach (var thread in threads)
                     {
-                        AddStaticName(names, ReadObjectSafely(field, thread), $"{type.Name}.{field.Name}");
+                        AddStaticName(
+                            threadStaticNames,
+                            ReadObjectSafely(field, thread),
+                            $"{type.Name}.{field.Name}");
                     }
                 }
             }
         }
 
-        return names;
+        return (staticNames, threadStaticNames);
     }
 
     private static ClrObject ReadObjectSafely(ClrStaticField field, ClrAppDomain domain)

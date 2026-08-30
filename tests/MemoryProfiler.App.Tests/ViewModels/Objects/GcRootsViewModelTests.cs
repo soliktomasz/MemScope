@@ -282,11 +282,21 @@ public sealed class GcRootsViewModelTests
             TaskCreationOptions.RunContinuationsAsynchronously);
         var completion = new TaskCompletionSource<IReadOnlyList<GcRootInfo>>(
             TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
         var service = new StubGcRootService(
             async cancellationToken =>
             {
-                started.SetResult();
-                return await completion.Task.WaitAsync(cancellationToken);
+                // First load blocks until the test releases it and deliberately
+                // ignores cancellation so the stale result can be observed.
+                // Subsequent loads return immediately without touching the
+                // completion sources.
+                if (Interlocked.Increment(ref calls) == 1)
+                {
+                    started.SetResult();
+                    return await completion.Task;
+                }
+
+                return [];
             });
         var viewModel = new GcRootsViewModel(service, ImmediateUiDispatcher.Instance);
         await using var _ = viewModel;
@@ -342,7 +352,7 @@ public sealed class GcRootsViewModelTests
 
     private sealed class StubGcRootService : IGcRootService
     {
-        private readonly IReadOnlyList<GcRootInfo> _roots;
+        private IReadOnlyList<GcRootInfo> _roots = [];
         private readonly Func<CancellationToken, Task<IReadOnlyList<GcRootInfo>>>? _handler;
 
         public StubGcRootService(IReadOnlyList<GcRootInfo> roots)

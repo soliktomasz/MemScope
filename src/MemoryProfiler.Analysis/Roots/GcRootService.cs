@@ -51,12 +51,9 @@ public sealed class GcRootService : IGcRootService
         // exhausts its reachable component marks every visited address dead, so
         // the union of unsuccessful searches costs at most one heap walk.
         var dead = new HashSet<ulong>();
-        // Outgoing references are enumerated at most once per address across all
-        // roots of a single FindRoots call.
-        var outgoingCache = new Dictionary<ulong, List<ObjectReference>>();
         var results = new List<GcRootInfo>();
 
-        foreach (var root in source.EnumerateRoots())
+        foreach (var root in source.EnumerateRoots(cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -83,7 +80,6 @@ public sealed class GcRootService : IGcRootService
                 root.ObjectAddress,
                 objectAddress,
                 dead,
-                outgoingCache,
                 cancellationToken);
             if (pathToObject is not null)
             {
@@ -122,7 +118,6 @@ public sealed class GcRootService : IGcRootService
         ulong startAddress,
         ulong targetAddress,
         HashSet<ulong> dead,
-        Dictionary<ulong, List<ObjectReference>> outgoingCache,
         CancellationToken cancellationToken)
     {
         // child address -> (parent address, the reference edge that discovered it)
@@ -141,7 +136,10 @@ public sealed class GcRootService : IGcRootService
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var current = queue.Dequeue();
-                foreach (var reference in GetOutgoing(source, current, outgoingCache))
+                // Traversal state lives and dies with this search: each address
+                // is enumerated at most once per BFS, and the dead set prevents
+                // later roots from re-walking exhausted components.
+                foreach (var reference in source.EnumerateOutgoingReferences(current))
                 {
                     var target = reference.TargetAddress;
                     if (target == 0 ||
@@ -174,21 +172,6 @@ public sealed class GcRootService : IGcRootService
         }
 
         return null;
-    }
-
-    private static List<ObjectReference> GetOutgoing(
-        IHeapDumpSource source,
-        ulong address,
-        Dictionary<ulong, List<ObjectReference>> outgoingCache)
-    {
-        if (outgoingCache.TryGetValue(address, out var cached))
-        {
-            return cached;
-        }
-
-        var references = source.EnumerateOutgoingReferences(address).ToList();
-        outgoingCache[address] = references;
-        return references;
     }
 
     private static List<ObjectReference> ReconstructPath(

@@ -38,18 +38,24 @@ public sealed class GcRootServiceAcceptanceTests
 
             // A 64 KiB chunk the target allocated and retained inside its
             // List<byte[]>: it must be reported as reachable from a GC root,
-            // never as garbage.
+            // never as garbage. The target may have produced several chunks
+            // before capture, so the largest one is used.
             var byteArrayType = Assert.Single(
-                snapshot.Types.Where(type => type.Name == "System.Byte[]"));
+                snapshot.Types, type => type.Name == "System.Byte[]");
             var chunks = await repository.GetInstancesAsync(
                 snapshot, byteArrayType.MethodTable, timeout.Token);
-            var chunk = Assert.Single(
-                chunks.Where(instance => instance.Size >= 64 * 1024));
+            var matching = chunks
+                .Where(instance => instance.Size >= 64 * 1024)
+                .OrderByDescending(instance => instance.Size)
+                .ToArray();
+            Assert.NotEmpty(matching);
+            var chunk = matching[0];
 
             var roots = await service.FindRootsAsync(
                 snapshot, chunk.Address, timeout.Token);
 
             Assert.NotEmpty(roots);
+
             Assert.All(
                 roots,
                 root =>
@@ -65,7 +71,8 @@ public sealed class GcRootServiceAcceptanceTests
                 .Where(root => root.Path is { Count: > 0 })
                 .ToArray();
             Assert.NotEmpty(chainRoots);
-            var chainRoot = chainRoots[0];            Assert.Equal(chainRoot.RootAddress, chainRoot.Path![0].SourceAddress);
+            var chainRoot = chainRoots[0];
+            Assert.Equal(chainRoot.RootAddress, chainRoot.Path![0].SourceAddress);
             Assert.Equal(chunk.Address, chainRoot.Path[^1].TargetAddress);
             for (var index = 1; index < chainRoot.Path.Count; index++)
             {

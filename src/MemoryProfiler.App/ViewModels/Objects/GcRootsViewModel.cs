@@ -267,7 +267,7 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
                 fieldDisplay: "GC Root",
                 kindDisplay: root.Kind,
                 addressDisplay: "root",
-                typeNameDisplay: rootTypeDisplay,
+                typeNameDisplay: rootTypeDisplay ?? "N/A",
                 endpointAddress: 0,
                 endpointTypeName: string.Empty,
                 canNavigate: false));
@@ -290,9 +290,9 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
                             : root.Name,
                         kindDisplay: root.Kind,
                         addressDisplay: GcRootRowViewModel.AddressDisplayFor(root.RootAddress),
-                        typeNameDisplay: headTypeName,
+                        typeNameDisplay: headTypeName ?? "N/A",
                         endpointAddress: root.RootAddress,
-                        endpointTypeName: headTypeName,
+                        endpointTypeName: headTypeName ?? string.Empty,
                         canNavigate: true));
                     continue;
                 }
