@@ -1,7 +1,9 @@
 using System.Runtime.CompilerServices;
+using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels;
 using MemoryProfiler.App.ViewModels.Overview;
 using MemoryProfiler.Contracts.Live;
+using MemoryProfiler.Diagnostics.Dumps;
 using MemoryProfiler.Diagnostics.Sessions;
 using Xunit;
 
@@ -9,6 +11,193 @@ namespace MemoryProfiler.App.Tests.ViewModels;
 
 public sealed class LiveSessionViewModelTests
 {
+    [Fact]
+    public async Task DismissingDestinationPickerLeavesCaptureStateUnchanged()
+    {
+        var session = new StubSession(waitForCancellation: true);
+        var capture = new RecordingDumpCaptureService();
+        await using var viewModel = new LiveSessionViewModel(
+            4217,
+            "SampleService",
+            new StubSessionFactory(session),
+            ImmediateUiDispatcher.Instance,
+            dumpCaptureService: capture,
+            dumpDestinationPicker: new StubDumpDestinationPicker(null));
+        var run = viewModel.StartAsync();
+        await session.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await viewModel.CaptureSnapshotAsync();
+
+        Assert.False(viewModel.IsCapturing);
+        Assert.False(viewModel.HasCaptureStatus);
+        Assert.False(viewModel.HasCaptureError);
+        Assert.False(capture.WasCalled);
+        await viewModel.DisconnectAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task DestinationPickerFailureIsNonfatalToTheLiveSession()
+    {
+        var session = new StubSession(waitForCancellation: true);
+        await using var viewModel = new LiveSessionViewModel(
+            4217,
+            "SampleService",
+            new StubSessionFactory(session),
+            ImmediateUiDispatcher.Instance,
+            dumpCaptureService: new RecordingDumpCaptureService(),
+            dumpDestinationPicker: new ThrowingDumpDestinationPicker(
+                new IOException("Picker unavailable.")));
+        var run = viewModel.StartAsync();
+        await session.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await viewModel.CaptureSnapshotAsync();
+
+        Assert.True(viewModel.IsLive);
+        Assert.True(viewModel.HasCaptureError);
+        Assert.Contains("Picker unavailable.", viewModel.CaptureErrorMessage);
+        await viewModel.DisconnectAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task CapturePublishesProgressAndSuccessfulPathThroughUiDispatcher()
+    {
+        var session = new StubSession(waitForCancellation: true);
+        var capture = new ControllableDumpCaptureService();
+        var dispatcher = new RecordingUiDispatcher();
+        await using var viewModel = CreateCaptureViewModel(session, capture, dispatcher);
+        Assert.False(viewModel.CaptureSnapshotCommand.CanExecute(null));
+        var run = viewModel.StartAsync();
+        await session.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(viewModel.CaptureSnapshotCommand.CanExecute(null));
+
+        var operation = viewModel.CaptureSnapshotAsync();
+        await capture.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(viewModel.IsCapturing);
+        Assert.Equal("Capturing snapshot", viewModel.CaptureStatusMessage);
+        Assert.False(viewModel.CaptureSnapshotCommand.CanExecute(null));
+        Assert.True(viewModel.CancelCaptureCommand.CanExecute(null));
+        var path = Path.Combine(Path.GetTempPath(), "snapshot.dmp");
+        capture.Completion.SetResult(path);
+        await operation;
+
+        Assert.False(viewModel.IsCapturing);
+        Assert.Equal(path, viewModel.CapturedDumpPath);
+        Assert.Equal("Snapshot saved", viewModel.CaptureStatusMessage);
+        Assert.False(viewModel.HasCaptureError);
+        Assert.True(dispatcher.Invocations >= 3);
+        await viewModel.DisconnectAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task CancellingCaptureReturnsToIdleWithoutAnError()
+    {
+        var session = new StubSession(waitForCancellation: true);
+        var capture = new ControllableDumpCaptureService();
+        await using var viewModel = CreateCaptureViewModel(session, capture);
+        var run = viewModel.StartAsync();
+        await session.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var operation = viewModel.CaptureSnapshotAsync();
+        await capture.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        viewModel.CancelCapture();
+        await operation.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(capture.Token.IsCancellationRequested);
+        Assert.False(viewModel.IsCapturing);
+        Assert.False(viewModel.HasCaptureError);
+        Assert.Equal(string.Empty, viewModel.CaptureStatusMessage);
+        await viewModel.DisconnectAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task CaptureFailureIsNonfatalToTheLiveSession()
+    {
+        var session = new StubSession(waitForCancellation: true);
+        var capture = new ControllableDumpCaptureService();
+        await using var viewModel = CreateCaptureViewModel(session, capture);
+        var run = viewModel.StartAsync();
+        await session.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var operation = viewModel.CaptureSnapshotAsync();
+        await capture.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        capture.Completion.SetException(new IOException("Disk full."));
+        await operation;
+
+        Assert.True(viewModel.IsLive);
+        Assert.True(viewModel.HasCaptureError);
+        Assert.Contains("Disk full.", viewModel.CaptureErrorMessage);
+        Assert.False(viewModel.HasError);
+        await viewModel.DisconnectAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task DisconnectCancelsAndAwaitsAnActiveCapture()
+    {
+        var session = new StubSession(waitForCancellation: true);
+        var capture = new ControllableDumpCaptureService();
+        await using var viewModel = CreateCaptureViewModel(session, capture);
+        var run = viewModel.StartAsync();
+        await session.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var operation = viewModel.CaptureSnapshotAsync();
+        await capture.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await viewModel.DisconnectAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.WhenAll(run, operation).WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(capture.Token.IsCancellationRequested);
+        Assert.True(viewModel.IsDisconnected);
+        Assert.False(viewModel.IsCapturing);
+    }
+
+    [Fact]
+    public async Task DisposalCancelsAndAwaitsAnActiveCapture()
+    {
+        var capture = new ControllableDumpCaptureService();
+        var session = new StubSession(waitForCancellation: true);
+        var viewModel = CreateCaptureViewModel(session, capture);
+        var run = viewModel.StartAsync();
+        await session.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var operation = viewModel.CaptureSnapshotAsync();
+        await capture.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await viewModel.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.WhenAll(run, operation).WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(capture.Token.IsCancellationRequested);
+        Assert.False(viewModel.HasCaptureError);
+    }
+
+    [Fact]
+    public async Task DisposalDuringDestinationSelectionDoesNotStartCapture()
+    {
+        var session = new StubSession(waitForCancellation: true);
+        var capture = new RecordingDumpCaptureService();
+        var picker = new ControllableDumpDestinationPicker();
+        var viewModel = new LiveSessionViewModel(
+            4217,
+            "SampleService",
+            new StubSessionFactory(session),
+            ImmediateUiDispatcher.Instance,
+            dumpCaptureService: capture,
+            dumpDestinationPicker: picker);
+        var run = viewModel.StartAsync();
+        await session.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var captureOperation = viewModel.CaptureSnapshotAsync();
+        await picker.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await viewModel.DisposeAsync();
+        picker.Completion.SetResult(Path.GetTempPath());
+        await Task.WhenAll(run, captureOperation).WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.False(capture.WasCalled);
+    }
+
     [Fact]
     public void ApplyingMetricsProjectsEveryDashboardValue()
     {
@@ -244,6 +433,18 @@ public sealed class LiveSessionViewModelTests
             generation2Collections,
             promotedBytes);
 
+    private static LiveSessionViewModel CreateCaptureViewModel(
+        StubSession session,
+        IDumpCaptureService capture,
+        IUiDispatcher? dispatcher = null) =>
+        new(
+            4217,
+            "SampleService",
+            new StubSessionFactory(session),
+            dispatcher ?? ImmediateUiDispatcher.Instance,
+            dumpCaptureService: capture,
+            dumpDestinationPicker: new StubDumpDestinationPicker(Path.GetTempPath()));
+
     private sealed class StubSessionFactory : ILiveDiagnosticsSessionFactory
     {
         private readonly ILiveDiagnosticsSession? _session;
@@ -395,6 +596,68 @@ public sealed class LiveSessionViewModelTests
             _queuedAction?.Invoke();
             ActionsApplied++;
             _completion.SetResult();
+        }
+    }
+
+    private sealed class StubDumpDestinationPicker(string? directory)
+        : IDumpDestinationPicker
+    {
+        public Task<string?> PickAsync() => Task.FromResult(directory);
+    }
+
+    private sealed class ControllableDumpDestinationPicker : IDumpDestinationPicker
+    {
+        public TaskCompletionSource Started { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<string?> Completion { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<string?> PickAsync()
+        {
+            Started.TrySetResult();
+            return Completion.Task;
+        }
+    }
+
+    private sealed class ThrowingDumpDestinationPicker(Exception exception)
+        : IDumpDestinationPicker
+    {
+        public Task<string?> PickAsync() => Task.FromException<string?>(exception);
+    }
+
+    private sealed class RecordingDumpCaptureService : IDumpCaptureService
+    {
+        public bool WasCalled { get; private set; }
+
+        public Task<string> CaptureAsync(
+            int processId,
+            string destinationDirectory,
+            CancellationToken cancellationToken = default)
+        {
+            WasCalled = true;
+            return Task.FromResult(Path.Combine(destinationDirectory, "snapshot.dmp"));
+        }
+    }
+
+    private sealed class ControllableDumpCaptureService : IDumpCaptureService
+    {
+        public TaskCompletionSource Started { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<string> Completion { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public CancellationToken Token { get; private set; }
+
+        public async Task<string> CaptureAsync(
+            int processId,
+            string destinationDirectory,
+            CancellationToken cancellationToken = default)
+        {
+            Token = cancellationToken;
+            Started.TrySetResult();
+            return await Completion.Task.WaitAsync(cancellationToken);
         }
     }
 }

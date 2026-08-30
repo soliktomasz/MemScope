@@ -80,6 +80,13 @@
                    Foreground="{DynamicResource AppTextSecondaryBrush}"
                    Text="Disconnected" />
         <Button Classes="dashboard-action"
+                Command="{Binding CaptureSnapshotCommand}"
+                Content="Capture Snapshot" />
+        <Button Classes="dashboard-action"
+                IsVisible="{Binding IsCapturing}"
+                Command="{Binding CancelCaptureCommand}"
+                Content="Cancel capture" />
+        <Button Classes="dashboard-action"
                 Command="{Binding DisconnectCommand}"
                 Content="Disconnect" />
         <Button Classes="dashboard-action"
@@ -89,12 +96,34 @@
       </StackPanel>
     </Grid>
 
-    <Grid Grid.Row="1">
+    <StackPanel Grid.Row="1" Spacing="8">
       <ProgressBar Height="2"
                    AutomationProperties.Name="Connecting to target process"
                    AutomationProperties.LiveSetting="Polite"
                    IsVisible="{Binding IsConnecting}"
                    IsIndeterminate="True" />
+      <ProgressBar Height="2"
+                   AutomationProperties.Name="Capturing managed process snapshot"
+                   AutomationProperties.LiveSetting="Polite"
+                   IsVisible="{Binding IsCapturing}"
+                   IsIndeterminate="True" />
+      <Grid IsVisible="{Binding HasCaptureStatus}"
+            ColumnDefinitions="Auto,*"
+            ColumnSpacing="10"
+            AutomationProperties.Name="{Binding CaptureStatusMessage}"
+            AutomationProperties.LiveSetting="Polite">
+        <TextBlock Grid.Column="0"
+                   FontSize="13"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource AppTextPrimaryBrush}"
+                   Text="{Binding CaptureStatusMessage}" />
+        <TextBlock Grid.Column="1"
+                   FontSize="13"
+                   Classes="secondary"
+                   TextTrimming="CharacterEllipsis"
+                   ToolTip.Tip="{Binding CapturedDumpPath}"
+                   Text="{Binding CapturedDumpPath}" />
+      </Grid>
       <Border IsVisible="{Binding HasError}"
               Padding="12,9"
               CornerRadius="{DynamicResource AppCornerRadius}"
@@ -106,7 +135,18 @@
                    TextWrapping="Wrap"
                    Text="{Binding ErrorMessage}" />
       </Border>
-    </Grid>
+      <Border IsVisible="{Binding HasCaptureError}"
+              Padding="12,9"
+              CornerRadius="{DynamicResource AppCornerRadius}"
+              AutomationProperties.Name="{Binding CaptureErrorMessage}"
+              AutomationProperties.LiveSetting="Assertive"
+              Background="{DynamicResource AppErrorSurfaceBrush}">
+        <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
+                   FontSize="13"
+                   TextWrapping="Wrap"
+                   Text="{Binding CaptureErrorMessage}" />
+      </Border>
+    </StackPanel>
 
     <TabControl Grid.Row="2">
       <TabItem Header="Overview">

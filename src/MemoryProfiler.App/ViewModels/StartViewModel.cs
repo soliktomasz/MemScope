@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Windows.Input;
+using MemoryProfiler.App.Services;
+using MemoryProfiler.Diagnostics.Dumps;
 using MemoryProfiler.Diagnostics.Sessions;
 
 namespace MemoryProfiler.App.ViewModels;
@@ -8,6 +10,8 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
 {
     private readonly ILiveDiagnosticsSessionFactory _sessionFactory;
     private readonly IUiDispatcher _uiDispatcher;
+    private readonly IDumpCaptureService? _dumpCaptureService;
+    private readonly IDumpDestinationPicker? _dumpDestinationPicker;
     private readonly AsyncCommand _attachToProcessCommand;
     private readonly AsyncCommand _attachSelectedProcessCommand;
     private bool _isProcessPickerVisible;
@@ -26,6 +30,16 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         ProcessPickerViewModel processPicker,
         ILiveDiagnosticsSessionFactory sessionFactory,
         IUiDispatcher uiDispatcher)
+        : this(processPicker, sessionFactory, uiDispatcher, null, null)
+    {
+    }
+
+    internal StartViewModel(
+        ProcessPickerViewModel processPicker,
+        ILiveDiagnosticsSessionFactory sessionFactory,
+        IUiDispatcher uiDispatcher,
+        IDumpCaptureService? dumpCaptureService,
+        IDumpDestinationPicker? dumpDestinationPicker)
     {
         ArgumentNullException.ThrowIfNull(processPicker);
         ArgumentNullException.ThrowIfNull(sessionFactory);
@@ -33,6 +47,8 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         ProcessPicker = processPicker;
         _sessionFactory = sessionFactory;
         _uiDispatcher = uiDispatcher;
+        _dumpCaptureService = dumpCaptureService;
+        _dumpDestinationPicker = dumpDestinationPicker;
         _attachToProcessCommand = new AsyncCommand(ShowProcessPickerAsync);
         _attachSelectedProcessCommand = new AsyncCommand(
             StartLiveSessionAsync,
@@ -93,7 +109,9 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
             selectedProcess.Name,
             _sessionFactory,
             _uiDispatcher,
-            closeSession: CloseLiveSessionAsync);
+            closeSession: CloseLiveSessionAsync,
+            dumpCaptureService: _dumpCaptureService,
+            dumpDestinationPicker: _dumpDestinationPicker);
         LiveSession = session;
         await session.StartAsync();
     }

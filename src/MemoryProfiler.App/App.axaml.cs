@@ -1,8 +1,11 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels;
+using MemoryProfiler.Diagnostics.Dumps;
 using MemoryProfiler.Diagnostics.Processes;
+using MemoryProfiler.Diagnostics.Sessions;
 
 namespace MemoryProfiler.App;
 
@@ -15,7 +18,16 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var processPicker = new ProcessPickerViewModel(new DotNetProcessDiscovery());
-            desktop.MainWindow = new MainWindow(new StartViewModel(processPicker));
+            MainWindow? mainWindow = null;
+            var destinationPicker = new AvaloniaDumpDestinationPicker(() => mainWindow);
+            var viewModel = new StartViewModel(
+                processPicker,
+                new LiveDiagnosticsSessionFactory(),
+                AvaloniaUiDispatcher.Instance,
+                new DumpCaptureService(),
+                destinationPicker);
+            mainWindow = new MainWindow(viewModel);
+            desktop.MainWindow = mainWindow;
         }
 
         base.OnFrameworkInitializationCompleted();
