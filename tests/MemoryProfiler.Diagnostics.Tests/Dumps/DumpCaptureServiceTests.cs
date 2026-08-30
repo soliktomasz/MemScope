@@ -89,6 +89,43 @@ public sealed class DumpCaptureServiceTests
     }
 
     [Fact]
+    public async Task SystemTemporaryPathDoesNotExistBeforeTargetWritesDump()
+    {
+        var destination = Path.Combine(
+            Path.GetTempPath(),
+            $"memscope-dump-path-{Guid.NewGuid():N}");
+        var pathExistedBeforeWrite = true;
+        var writer = new StubWriter((path, _) =>
+        {
+            pathExistedBeforeWrite = File.Exists(path);
+            File.WriteAllBytes(path, []);
+            return Task.CompletedTask;
+        });
+        var service = new DumpCaptureService(
+            writer,
+            new SystemDumpCaptureEnvironment());
+
+        try
+        {
+            var result = await service.CaptureAsync(Environment.ProcessId, destination);
+
+            Assert.False(pathExistedBeforeWrite);
+            Assert.True(File.Exists(result));
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(destination, recursive: true);
+            }
+            catch
+            {
+                // Test cleanup is best effort.
+            }
+        }
+    }
+
+    [Fact]
     public async Task CaptureRetriesAtomicMoveWhenFinalNameIsClaimedConcurrently()
     {
         var destination = Path.Combine(Path.GetTempPath(), "captures");

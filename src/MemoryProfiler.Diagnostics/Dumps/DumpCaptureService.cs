@@ -186,18 +186,9 @@ internal sealed class SystemDumpCaptureEnvironment : IDumpCaptureEnvironment
             var path = Path.Combine(
                 directory,
                 $".memscope-{Guid.NewGuid():N}.partial.dmp");
-            try
+            if (!File.Exists(path))
             {
-                using var reservation = new FileStream(
-                    path,
-                    FileMode.CreateNew,
-                    FileAccess.Write,
-                    FileShare.None);
                 return path;
-            }
-            catch (IOException) when (File.Exists(path))
-            {
-                // Retry the practically impossible random-name collision.
             }
         }
     }

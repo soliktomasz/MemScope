@@ -10,15 +10,16 @@ public sealed class DumpCaptureAcceptanceTests
     [Fact]
     public async Task CapturedDumpCanImmediatelyBeOpenedByClrMd()
     {
-        var fixture = await LiveDiagnosticsTargetFixture.StartAsync();
         var destination = Path.Combine(
             Path.GetTempPath(),
             $"memscope-dump-{Guid.NewGuid():N}");
         var ambientTempDir = Environment.GetEnvironmentVariable("TMPDIR");
-        Directory.CreateDirectory(destination);
+        LiveDiagnosticsTargetFixture? fixture = null;
 
         try
         {
+            Directory.CreateDirectory(destination);
+            fixture = await LiveDiagnosticsTargetFixture.StartAsync();
             Environment.SetEnvironmentVariable("TMPDIR", fixture.SocketRoot);
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
             var service = new DumpCaptureService();
@@ -34,7 +35,11 @@ public sealed class DumpCaptureAcceptanceTests
         finally
         {
             Environment.SetEnvironmentVariable("TMPDIR", ambientTempDir);
-            await fixture.DisposeAsync();
+            if (fixture is not null)
+            {
+                await fixture.DisposeAsync();
+            }
+
             try
             {
                 Directory.Delete(destination, recursive: true);
