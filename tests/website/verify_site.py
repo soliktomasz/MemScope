@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[2]
 DOCS = ROOT / "docs"
 INDEX = DOCS / "index.html"
+STYLES = DOCS / "styles.css"
 REPOSITORY_URL = "https://github.com/soliktomasz/MemScope"
 
 
@@ -69,6 +70,32 @@ def assert_relative_assets(source: str) -> None:
     assert all(not value.startswith("/") for value in local_assets), local_assets
 
 
+def assert_stylesheet_contract() -> None:
+    assert STYLES.exists(), "docs/styles.css is missing"
+    styles = STYLES.read_text(encoding="utf-8")
+    for token in (
+        "--background",
+        "--surface",
+        "--surface-subtle",
+        "--border",
+        "--text",
+        "--muted",
+        "--accent",
+        "--accent-contrast",
+    ):
+        assert token in styles, f"missing stylesheet token {token}"
+    for contract in (
+        "@media (prefers-color-scheme: dark)",
+        "@media (prefers-reduced-motion: reduce)",
+        "min-height: 100dvh",
+        ":focus-visible",
+        "@media (max-width: 767px)",
+    ):
+        assert contract in styles, f"missing stylesheet contract {contract}"
+    for forbidden in ("100vh", "#000000", "#ffffff"):
+        assert forbidden not in styles, f"forbidden stylesheet value {forbidden}"
+
+
 def main() -> int:
     assert INDEX.exists(), "docs/index.html is missing"
     source = INDEX.read_text(encoding="utf-8")
@@ -89,6 +116,7 @@ def main() -> int:
     assert len(github_labels) >= 2
     assert set(github_labels) == {"View GitHub"}, github_labels
     assert_relative_assets(source)
+    assert_stylesheet_contract()
 
     print("website structure: ok")
     return 0
