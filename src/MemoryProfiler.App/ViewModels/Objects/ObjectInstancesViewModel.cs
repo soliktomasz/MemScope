@@ -86,6 +86,14 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
             _type = type;
             SetError(null);
             _isLoading = true;
+            // Drop the previous type's rows before the new load publishes any
+            // state, so a failed or pending load can never show stale results
+            // or a summary that contradicts the selected type name.
+            _instances = [];
+            _instancesView = new ReadOnlyObservableCollection<HeapObjectRowViewModel>(_instances);
+            _totalSize = 0;
+            OnPropertyChanged(nameof(Instances));
+            OnPropertyChanged(nameof(SummaryDisplay));
             OnPropertyChanged(nameof(TypeName));
             OnPropertyChanged(nameof(HasSelection));
             NotifyDisplayStateChanged();

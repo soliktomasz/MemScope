@@ -6,6 +6,7 @@ using Xunit;
 
 namespace MemoryProfiler.Analysis.Tests.Objects;
 
+[Collection("Live diagnostics")]
 public sealed class ClrMdHeapObjectRepositoryAcceptanceTests
 {
     private static readonly string[] KnownGenerationLabels =

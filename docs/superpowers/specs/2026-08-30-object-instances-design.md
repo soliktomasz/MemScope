@@ -82,7 +82,7 @@ public interface IHeapObjectRepository
 `ClrMdHeapObjectRepository` mirrors `ClrMdHeapSnapshotLoader`:
 
 - Reuses the internal `IHeapDumpSourceFactory` / `IHeapDumpSource` abstraction so unit tests stub the same way the loader tests do.
-- `HeapObjectData` gains `ulong Address` and `Generation? Generation` (the ClrMD enum) with defaults, so existing call sites and stubs keep compiling; `ClrMdHeapDumpSource.EnumerateObjects` populates both (`ClrObject.Address`, `heap.GetSegmentByAddress(address)?.GetGeneration(address)`).
+- `HeapObjectData` gains `ulong Address` (defaulted, so existing call sites and stubs keep compiling); `ClrMdHeapDumpSource.EnumerateObjects` populates it from `ClrObject.Address` and keeps the existing enumeration behavior unchanged. Generation is not carried per row: `IHeapDumpSource` gains a `Generation? GetGeneration(ulong address)` getter (segment lookup), which the repository calls only for objects matching the requested method table, so the loader's initial type scan pays no per-object generation cost.
 - `GetInstancesAsync` validates the snapshot and method table, then runs the walk inside `Task.Run` (off the caller thread, like the loader), checks cancellation per object, skips invalid/free/untyped entries, filters by method table, maps `Generation` to a label, and orders by address ascending so the list is stable and scannable.
 - A heap that cannot be walked fails with `InvalidDataException`, same as the loader.
 

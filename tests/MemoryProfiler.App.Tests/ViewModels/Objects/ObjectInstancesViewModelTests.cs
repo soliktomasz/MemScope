@@ -141,7 +141,7 @@ public sealed class ObjectInstancesViewModelTests
     }
 
     [Fact]
-    public async Task ShowSwapsTheInstancesCollectionInOneNotification()
+    public async Task ShowSwapsTheInstancesCollectionInBatchedNotifications()
     {
         var viewModel = new ObjectInstancesViewModel(
             new StubHeapObjectRepository(
@@ -164,10 +164,47 @@ public sealed class ObjectInstancesViewModelTests
 
         await viewModel.ShowAsync(Snapshot(), Type(0x1000, "MyApp.Widget"));
 
-        // The rows arrive as one collection swap, never one notification per row.
-        Assert.Equal(1, instancesNotifications);
+        // One clear while loading plus one swap when rows arrive, never one
+        // notification per row.
+        Assert.Equal(2, instancesNotifications);
         Assert.NotSame(initialCollection, viewModel.Instances);
         Assert.Equal(3, viewModel.Instances.Count);
+    }
+
+    [Fact]
+    public async Task LoadingANewTypeClearsThePreviousInstances()
+    {
+        var gates = new Dictionary<ulong, TaskCompletionSource<IReadOnlyList<HeapObjectInfo>>>();
+        var viewModel = new ObjectInstancesViewModel(
+            new StubHeapObjectRepository((_, methodTable, _) =>
+            {
+                var completion = new TaskCompletionSource<IReadOnlyList<HeapObjectInfo>>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                gates[methodTable] = completion;
+                return completion.Task;
+            }),
+            ImmediateUiDispatcher.Instance);
+        await using var _ = viewModel;
+
+        var first = viewModel.ShowAsync(Snapshot(), Type(0x1000, "MyApp.First"));
+        gates[0x1000].SetResult(
+            [Instance(0x1000, "MyApp.First", 64, "Gen0")]);
+        await first;
+        Assert.Equal(1, viewModel.Instances.Count);
+
+        var second = viewModel.ShowAsync(Snapshot(), Type(0x2000, "MyApp.Second"));
+
+        // While the second type loads, no rows or summary from the first type
+        // may remain visible.
+        Assert.Equal("MyApp.Second", viewModel.TypeName);
+        Assert.True(viewModel.ShowLoading);
+        Assert.Empty(viewModel.Instances);
+        Assert.Equal(string.Empty, viewModel.SummaryDisplay);
+
+        gates[0x2000].SetResult(
+            [Instance(0x2000, "MyApp.Second", 32, "Gen1")]);
+        await second;
+        Assert.Equal("MyApp.Second", Assert.Single(viewModel.Instances).Instance.TypeName);
     }
 
     [Fact]

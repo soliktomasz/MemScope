@@ -5,6 +5,7 @@ using Xunit;
 
 namespace MemoryProfiler.Analysis.Tests.Loading;
 
+[Collection("Live diagnostics")]
 public sealed class ClrMdHeapSnapshotLoaderAcceptanceTests
 {
     [Fact]
