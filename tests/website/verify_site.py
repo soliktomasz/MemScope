@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DOCS = ROOT / "docs"
 INDEX = DOCS / "index.html"
 STYLES = DOCS / "styles.css"
+SCRIPT = DOCS / "script.js"
 REPOSITORY_URL = "https://github.com/soliktomasz/MemScope"
 
 
@@ -96,6 +97,17 @@ def assert_stylesheet_contract() -> None:
         assert forbidden not in styles, f"forbidden stylesheet value {forbidden}"
 
 
+def assert_script_contract(parser: SiteParser) -> None:
+    assert SCRIPT.exists(), "docs/script.js is missing"
+    assert any(
+        script.get("src") == "script.js" and script.get("type") == "module"
+        for script in parser.scripts
+    ), "script.js must load as an ES module"
+    script = SCRIPT.read_text(encoding="utf-8")
+    for forbidden in ('addEventListener("scroll"', "window.scrollY"):
+        assert forbidden not in script, f"forbidden scroll pattern {forbidden}"
+
+
 def main() -> int:
     assert INDEX.exists(), "docs/index.html is missing"
     source = INDEX.read_text(encoding="utf-8")
@@ -117,6 +129,7 @@ def main() -> int:
     assert set(github_labels) == {"View GitHub"}, github_labels
     assert_relative_assets(source)
     assert_stylesheet_contract()
+    assert_script_contract(parser)
 
     print("website structure: ok")
     return 0
