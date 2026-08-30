@@ -1,7 +1,9 @@
 using System.Collections.Specialized;
 using System.Runtime.CompilerServices;
+using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels;
+using MemoryProfiler.Contracts.Heap;
 using MemoryProfiler.Contracts.Live;
 using MemoryProfiler.Contracts.Processes;
 using MemoryProfiler.Diagnostics.Dumps;
@@ -333,6 +335,207 @@ public sealed class StartViewModelTests
         await liveRun;
     }
 
+    [Fact]
+    public async Task OpenDumpIsDisabledUntilLoaderAndPickerAreSupplied()
+    {
+        using var start = new StartViewModel(new ProcessPickerViewModel(StubDiscovery.Returning()));
+
+        Assert.False(start.OpenDumpCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task OpenDumpPickerCancellationLeavesTheStartScreenUnchanged()
+    {
+        using var start = new StartViewModel(
+            new ProcessPickerViewModel(StubDiscovery.Returning()),
+            new StubLiveSessionFactory(new StubLiveSession()),
+            ImmediateUiDispatcher.Instance,
+            new RecordingDumpCaptureService(),
+            new StubDumpDestinationPicker(Path.GetTempPath()),
+            new StubHeapSnapshotLoader(SampleSnapshot()),
+            new StubDumpFilePicker(null));
+
+        await start.OpenDumpAsync();
+
+        Assert.True(start.IsStartVisible);
+        Assert.False(start.IsSnapshotVisible);
+        Assert.Null(start.Snapshot);
+        Assert.False(start.HasDumpError);
+    }
+
+    [Fact]
+    public async Task OpenDumpLoadsTheSelectedDumpAndShowsTheSnapshot()
+    {
+        var loader = new StubHeapSnapshotLoader(SampleSnapshot());
+        using var start = new StartViewModel(
+            new ProcessPickerViewModel(StubDiscovery.Returning()),
+            new StubLiveSessionFactory(new StubLiveSession()),
+            ImmediateUiDispatcher.Instance,
+            new RecordingDumpCaptureService(),
+            new StubDumpDestinationPicker(Path.GetTempPath()),
+            loader,
+            new StubDumpFilePicker("/tmp/sample.dmp"));
+
+        await start.OpenDumpAsync();
+
+        Assert.Equal("/tmp/sample.dmp", loader.Path);
+        Assert.True(start.IsSnapshotVisible);
+        Assert.False(start.IsStartVisible);
+        Assert.NotNull(start.Snapshot);
+        Assert.True(start.Snapshot.HasSnapshot);
+        Assert.True(start.Snapshot.Types.HasTypes);
+    }
+
+    [Fact]
+    public async Task OpenDumpPickerFailureShowsAnInlineRetryableError()
+    {
+        using var start = new StartViewModel(
+            new ProcessPickerViewModel(StubDiscovery.Returning()),
+            new StubLiveSessionFactory(new StubLiveSession()),
+            ImmediateUiDispatcher.Instance,
+            new RecordingDumpCaptureService(),
+            new StubDumpDestinationPicker(Path.GetTempPath()),
+            new StubHeapSnapshotLoader(SampleSnapshot()),
+            new ThrowingDumpFilePicker(new IOException("Picker unavailable.")));
+
+        await start.OpenDumpAsync();
+
+        Assert.True(start.HasDumpError);
+        Assert.Contains("Picker unavailable.", start.DumpErrorMessage);
+        Assert.True(start.IsStartVisible);
+        Assert.Null(start.Snapshot);
+    }
+
+    [Fact]
+    public async Task OpenDumpLoadFailureIsShownInsideTheSnapshotViewAndCloseReturnsToStart()
+    {
+        var loader = new StubHeapSnapshotLoader(
+            _ => Task.FromException<HeapSnapshot>(
+                new InvalidDataException("Not a dump.")));
+        using var start = new StartViewModel(
+            new ProcessPickerViewModel(StubDiscovery.Returning()),
+            new StubLiveSessionFactory(new StubLiveSession()),
+            ImmediateUiDispatcher.Instance,
+            new RecordingDumpCaptureService(),
+            new StubDumpDestinationPicker(Path.GetTempPath()),
+            loader,
+            new StubDumpFilePicker("/tmp/sample.dmp"));
+
+        await start.OpenDumpAsync();
+
+        Assert.True(start.IsSnapshotVisible);
+        Assert.True(start.Snapshot!.HasError);
+        Assert.Contains("Not a dump.", start.Snapshot.ErrorMessage);
+
+        await start.CloseSnapshotAsync();
+
+        Assert.True(start.IsStartVisible);
+        Assert.False(start.IsSnapshotVisible);
+        Assert.Null(start.Snapshot);
+    }
+
+    [Fact]
+    public async Task AnalyzingACapturedDumpOpensTheSnapshotAndKeepsTheLiveSession()
+    {
+        var picker = new ProcessPickerViewModel(
+            StubDiscovery.Returning(new ProcessInfo(4217, "SampleService", "10.0.0")));
+        var session = new BlockingLiveSession();
+        await using var start = new StartViewModel(
+            picker,
+            new StubLiveSessionFactory(session),
+            ImmediateUiDispatcher.Instance,
+            new RecordingDumpCaptureService(),
+            new StubDumpDestinationPicker(Path.GetTempPath()),
+            new StubHeapSnapshotLoader(SampleSnapshot()),
+            new StubDumpFilePicker(null));
+        await picker.RefreshAsync();
+        picker.SelectedProcess = Assert.Single(picker.Processes);
+        var liveRun = start.StartLiveSessionAsync();
+        await session.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await start.AnalyzeCapturedDumpAsync("/tmp/captured.dmp");
+
+        Assert.NotNull(start.LiveSession);
+        Assert.False(start.IsLiveSessionVisible);
+        Assert.True(start.IsSnapshotVisible);
+        Assert.True(start.Snapshot!.HasSnapshot);
+
+        await start.CloseSnapshotAsync();
+
+        Assert.True(start.IsLiveSessionVisible);
+        Assert.False(start.IsSnapshotVisible);
+        Assert.Null(start.Snapshot);
+        await start.CloseLiveSessionAsync();
+        await liveRun;
+    }
+
+    [Fact]
+    public async Task FailedAnalysisKeepsTheLiveSessionRunning()
+    {
+        var picker = new ProcessPickerViewModel(
+            StubDiscovery.Returning(new ProcessInfo(4217, "SampleService", "10.0.0")));
+        var session = new BlockingLiveSession();
+        await using var start = new StartViewModel(
+            picker,
+            new StubLiveSessionFactory(session),
+            ImmediateUiDispatcher.Instance,
+            new RecordingDumpCaptureService(),
+            new StubDumpDestinationPicker(Path.GetTempPath()),
+            new StubHeapSnapshotLoader(
+                _ => Task.FromException<HeapSnapshot>(
+                    new InvalidDataException("Not a dump."))),
+            new StubDumpFilePicker(null));
+        await picker.RefreshAsync();
+        picker.SelectedProcess = Assert.Single(picker.Processes);
+        var liveRun = start.StartLiveSessionAsync();
+        await session.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await start.AnalyzeCapturedDumpAsync("/tmp/captured.dmp");
+
+        Assert.NotNull(start.LiveSession);
+        Assert.True(start.Snapshot!.HasError);
+
+        await start.CloseSnapshotAsync();
+        await start.CloseLiveSessionAsync();
+        await liveRun;
+    }
+
+    [Fact]
+    public async Task AnalyzingIgnoresMissingPaths()
+    {
+        using var start = new StartViewModel(
+            new ProcessPickerViewModel(StubDiscovery.Returning()),
+            new StubLiveSessionFactory(new StubLiveSession()),
+            ImmediateUiDispatcher.Instance,
+            new RecordingDumpCaptureService(),
+            new StubDumpDestinationPicker(Path.GetTempPath()),
+            new StubHeapSnapshotLoader(SampleSnapshot()),
+            new StubDumpFilePicker(null));
+
+        await start.AnalyzeCapturedDumpAsync(string.Empty);
+
+        Assert.True(start.IsStartVisible);
+        Assert.Null(start.Snapshot);
+    }
+
+    private static HeapSnapshot SampleSnapshot() =>
+        new()
+        {
+            Info = new HeapSnapshotInfo(
+                Path.GetFullPath("sample.dmp"),
+                "Sample.Process",
+                4217,
+                "10.0.0",
+                new DateTimeOffset(2026, 8, 28, 16, 25, 0, TimeSpan.Zero),
+                12_345,
+                4_000_000),
+            Types =
+            [
+                new HeapTypeInfo(0x1000, "System.String", "System.Private.CoreLib", 381_235, 44_200_000, null),
+                new HeapTypeInfo(0x2000, "MyApp.CacheEntry", "MyApp", 50_000, 118_400_000, null)
+            ]
+        };
+
     private sealed class StubDiscovery(
         Func<CancellationToken, Task<IReadOnlyList<ProcessInfo>>> discover) : IDotNetProcessDiscovery
     {
@@ -424,6 +627,39 @@ public sealed class StartViewModelTests
             ProcessId = processId;
             DestinationDirectory = destinationDirectory;
             return Task.FromResult(Path.Combine(destinationDirectory, "snapshot.dmp"));
+        }
+    }
+
+    private sealed class StubDumpFilePicker(string? path) : IDumpFilePicker
+    {
+        public Task<string?> PickAsync() => Task.FromResult(path);
+    }
+
+    private sealed class ThrowingDumpFilePicker(Exception exception) : IDumpFilePicker
+    {
+        public Task<string?> PickAsync() => Task.FromException<string?>(exception);
+    }
+
+    private sealed class StubHeapSnapshotLoader : IHeapSnapshotLoader
+    {
+        private readonly Func<CancellationToken, Task<HeapSnapshot>> _load;
+
+        public StubHeapSnapshotLoader(HeapSnapshot snapshot)
+            : this(_ => Task.FromResult(snapshot))
+        {
+        }
+
+        public StubHeapSnapshotLoader(Func<CancellationToken, Task<HeapSnapshot>> load) =>
+            _load = load;
+
+        public string? Path { get; private set; }
+
+        public Task<HeapSnapshot> LoadAsync(
+            string path,
+            CancellationToken cancellationToken = default)
+        {
+            Path = path;
+            return _load(cancellationToken);
         }
     }
 }

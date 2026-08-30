@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Windows.Input;
+using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.Diagnostics.Dumps;
 using MemoryProfiler.Diagnostics.Sessions;
@@ -12,10 +13,15 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
     private readonly IUiDispatcher _uiDispatcher;
     private readonly IDumpCaptureService? _dumpCaptureService;
     private readonly IDumpDestinationPicker? _dumpDestinationPicker;
+    private readonly IHeapSnapshotLoader? _snapshotLoader;
+    private readonly IDumpFilePicker? _dumpFilePicker;
     private readonly AsyncCommand _attachToProcessCommand;
     private readonly AsyncCommand _attachSelectedProcessCommand;
+    private readonly AsyncCommand _openDumpCommand;
     private bool _isProcessPickerVisible;
     private LiveSessionViewModel? _liveSession;
+    private SnapshotViewModel? _snapshot;
+    private string? _dumpErrorMessage;
     private bool _isDisposed;
 
     public StartViewModel(ProcessPickerViewModel processPicker)
@@ -40,6 +46,25 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         IUiDispatcher uiDispatcher,
         IDumpCaptureService? dumpCaptureService,
         IDumpDestinationPicker? dumpDestinationPicker)
+        : this(
+            processPicker,
+            sessionFactory,
+            uiDispatcher,
+            dumpCaptureService,
+            dumpDestinationPicker,
+            null,
+            null)
+    {
+    }
+
+    internal StartViewModel(
+        ProcessPickerViewModel processPicker,
+        ILiveDiagnosticsSessionFactory sessionFactory,
+        IUiDispatcher uiDispatcher,
+        IDumpCaptureService? dumpCaptureService,
+        IDumpDestinationPicker? dumpDestinationPicker,
+        IHeapSnapshotLoader? snapshotLoader,
+        IDumpFilePicker? dumpFilePicker)
     {
         ArgumentNullException.ThrowIfNull(processPicker);
         ArgumentNullException.ThrowIfNull(sessionFactory);
@@ -49,10 +74,17 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         _uiDispatcher = uiDispatcher;
         _dumpCaptureService = dumpCaptureService;
         _dumpDestinationPicker = dumpDestinationPicker;
+        _snapshotLoader = snapshotLoader;
+        _dumpFilePicker = dumpFilePicker;
         _attachToProcessCommand = new AsyncCommand(ShowProcessPickerAsync);
         _attachSelectedProcessCommand = new AsyncCommand(
             StartLiveSessionAsync,
             () => ProcessPicker.SelectedProcess is not null && LiveSession is null);
+        _openDumpCommand = new AsyncCommand(
+            OpenDumpAsync,
+            () => Snapshot is null &&
+                  _dumpFilePicker is not null &&
+                  _snapshotLoader is not null);
         ProcessPicker.PropertyChanged += OnProcessPickerPropertyChanged;
     }
 
@@ -78,15 +110,40 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         }
     }
 
-    public bool IsStartVisible => LiveSession is null;
+    public SnapshotViewModel? Snapshot
+    {
+        get => _snapshot;
+        private set
+        {
+            if (!SetProperty(ref _snapshot, value))
+            {
+                return;
+            }
 
-    public bool IsLiveSessionVisible => LiveSession is not null;
+            OnPropertyChanged(nameof(IsStartVisible));
+            OnPropertyChanged(nameof(IsLiveSessionVisible));
+            OnPropertyChanged(nameof(IsSnapshotVisible));
+            _openDumpCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    public bool IsStartVisible => LiveSession is null && Snapshot is null;
+
+    public bool IsLiveSessionVisible => LiveSession is not null && Snapshot is null;
+
+    public bool IsSnapshotVisible => Snapshot is not null;
 
     public bool IsProcessPickerVisible
     {
         get => _isProcessPickerVisible;
         private set => SetProperty(ref _isProcessPickerVisible, value);
     }
+
+    public ICommand OpenDumpCommand => _openDumpCommand;
+
+    public string DumpErrorMessage => _dumpErrorMessage ?? string.Empty;
+
+    public bool HasDumpError => _dumpErrorMessage is not null;
 
     public async Task ShowProcessPickerAsync()
     {
@@ -111,7 +168,8 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
             _uiDispatcher,
             closeSession: CloseLiveSessionAsync,
             dumpCaptureService: _dumpCaptureService,
-            dumpDestinationPicker: _dumpDestinationPicker);
+            dumpDestinationPicker: _dumpDestinationPicker,
+            analyzeSnapshot: AnalyzeCapturedDumpAsync);
         LiveSession = session;
         await session.StartAsync();
     }
@@ -128,6 +186,84 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         if (ReferenceEquals(LiveSession, session))
         {
             LiveSession = null;
+        }
+    }
+
+    public async Task OpenDumpAsync()
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        if (Snapshot is not null || _dumpFilePicker is null || _snapshotLoader is null)
+        {
+            return;
+        }
+
+        SetDumpError(null);
+
+        string? path;
+        try
+        {
+            path = await _dumpFilePicker.PickAsync();
+        }
+        catch (Exception exception)
+        {
+            await _uiDispatcher.InvokeAsync(() =>
+                SetDumpError($"Unable to open the dump picker. {exception.Message}"));
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        await OpenSnapshotAsync(path);
+    }
+
+    public async Task AnalyzeCapturedDumpAsync(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || Snapshot is not null)
+        {
+            return;
+        }
+
+        // Keep the live session running behind the snapshot; the user returns to
+        // it when the snapshot is closed. A failed analysis must not lose the
+        // live diagnostics session.
+        await OpenSnapshotAsync(path);
+    }
+
+    public async Task CloseSnapshotAsync()
+    {
+        var snapshot = Snapshot;
+        if (snapshot is null)
+        {
+            return;
+        }
+
+        await snapshot.DisposeAsync();
+        if (ReferenceEquals(Snapshot, snapshot))
+        {
+            Snapshot = null;
+        }
+    }
+
+    private async Task OpenSnapshotAsync(string path)
+    {
+        if (_snapshotLoader is null)
+        {
+            return;
+        }
+
+        var snapshot = new SnapshotViewModel(_snapshotLoader, _uiDispatcher, CloseSnapshotAsync);
+        Snapshot = snapshot;
+        await snapshot.LoadAsync(path);
+    }
+
+    private void SetDumpError(string? message)
+    {
+        if (SetProperty(ref _dumpErrorMessage, message, nameof(DumpErrorMessage)))
+        {
+            OnPropertyChanged(nameof(HasDumpError));
         }
     }
 
@@ -150,6 +286,12 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         {
             await LiveSession.DisposeAsync();
             LiveSession = null;
+        }
+
+        if (Snapshot is not null)
+        {
+            await Snapshot.DisposeAsync();
+            Snapshot = null;
         }
     }
 

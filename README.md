@@ -11,9 +11,10 @@ Built with .NET and Avalonia, it connects to a process through EventPipe and dis
 - Inspect Gen 0, Gen 1, and Gen 2 sizes and collection counts
 - Track large object heap, pinned object heap, and promoted bytes
 - Capture heap-bearing dumps from a live profiling session
+- Open captured dumps and browse managed heap types with sorting and filters
 - Disconnect safely when profiling is complete
 
-Opening captured dumps, saved sessions, and offline heap analysis are not supported yet.
+Opening captured dumps and offline heap analysis are now supported through the snapshot type browser.
 
 ## Requirements
 
