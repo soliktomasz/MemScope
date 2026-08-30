@@ -163,16 +163,11 @@ p {
   text-decoration: none;
 }
 
-.brand span {
-  display: grid;
+.brand img {
+  display: block;
   width: 30px;
   height: 30px;
-  place-items: center;
   border-radius: var(--radius);
-  background: var(--text);
-  color: var(--background);
-  font-size: 0.8rem;
-  letter-spacing: -0.08em;
 }
 
 .nav-menu summary {
