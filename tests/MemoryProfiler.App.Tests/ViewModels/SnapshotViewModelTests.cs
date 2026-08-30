@@ -1,5 +1,6 @@
 using System.Globalization;
 using MemoryProfiler.Analysis.Loading;
+using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels;
 using MemoryProfiler.Contracts.Heap;
@@ -33,6 +34,7 @@ public sealed class SnapshotViewModelTests
                 Type("MyApp.CacheEntry", "MyApp", 50_000, 118_400_000)));
         await using var viewModel = new SnapshotViewModel(
             loader,
+            new StubHeapObjectRepository([]),
             ImmediateUiDispatcher.Instance);
 
         await viewModel.LoadAsync("sample.dmp");
@@ -66,6 +68,7 @@ public sealed class SnapshotViewModelTests
             });
         await using var viewModel = new SnapshotViewModel(
             loader,
+            new StubHeapObjectRepository([]),
             ImmediateUiDispatcher.Instance);
 
         var load = viewModel.LoadAsync("sample.dmp");
@@ -92,6 +95,7 @@ public sealed class SnapshotViewModelTests
                 new InvalidDataException("The dump has no CLR runtime.")));
         await using var viewModel = new SnapshotViewModel(
             loader,
+            new StubHeapObjectRepository([]),
             ImmediateUiDispatcher.Instance);
 
         await viewModel.LoadAsync("sample.dmp");
@@ -118,6 +122,7 @@ public sealed class SnapshotViewModelTests
             });
         await using var viewModel = new SnapshotViewModel(
             loader,
+            new StubHeapObjectRepository([]),
             ImmediateUiDispatcher.Instance);
 
         using var cancellation = new CancellationTokenSource();
@@ -141,6 +146,7 @@ public sealed class SnapshotViewModelTests
             Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24)));
         await using var viewModel = new SnapshotViewModel(
             loader,
+            new StubHeapObjectRepository([]),
             ImmediateUiDispatcher.Instance,
             close: () =>
             {
@@ -168,7 +174,7 @@ public sealed class SnapshotViewModelTests
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
                 throw new OperationCanceledException(cancellationToken);
             });
-        var viewModel = new SnapshotViewModel(loader, ImmediateUiDispatcher.Instance);
+        var viewModel = new SnapshotViewModel(loader, new StubHeapObjectRepository([]), ImmediateUiDispatcher.Instance);
 
         var load = viewModel.LoadAsync("sample.dmp");
         await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -178,6 +184,81 @@ public sealed class SnapshotViewModelTests
 
         Assert.True(loadToken.IsCancellationRequested);
         Assert.False(viewModel.HasError);
+    }
+
+    [Fact]
+    public async Task SelectingATypeLoadsItsInstances()
+    {
+        var repository = new StubHeapObjectRepository(
+            [new HeapObjectInfo(0x2000, 0x1000, "System.String", 24, "Gen0")]);
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(
+                Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
+            repository,
+            ImmediateUiDispatcher.Instance);
+        await viewModel.LoadAsync("sample.dmp");
+
+        var row = viewModel.Types.FilteredTypes.Single(type => type.TypeName == "System.String");
+        viewModel.Types.SelectedType = row;
+
+        Assert.Equal(0x1000UL, repository.RequestedMethodTable);
+        Assert.True(viewModel.ObjectInstances.HasSelection);
+        Assert.True(viewModel.ObjectInstances.ShowTable);
+        var instance = Assert.Single(viewModel.ObjectInstances.Instances);
+        Assert.Equal("System.String", instance.Instance.TypeName);
+        Assert.Equal("Gen0", instance.GenerationDisplay);
+    }
+
+    [Fact]
+    public async Task ClearingTheTypeSelectionReturnsInstancesToIdle()
+    {
+        var repository = new StubHeapObjectRepository(
+            [new HeapObjectInfo(0x2000, 0x1000, "System.String", 24, "Gen0")]);
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(
+                Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
+            repository,
+            ImmediateUiDispatcher.Instance);
+        await viewModel.LoadAsync("sample.dmp");
+
+        viewModel.Types.SelectedType = viewModel.Types.FilteredTypes.Single();
+        Assert.True(viewModel.ObjectInstances.ShowTable);
+
+        viewModel.Types.SelectedType = null;
+
+        Assert.False(viewModel.ObjectInstances.HasSelection);
+        Assert.True(viewModel.ObjectInstances.ShowIdle);
+        Assert.Empty(viewModel.ObjectInstances.Instances);
+    }
+
+    [Fact]
+    public async Task DisposeCancelsAnInFlightInstancesLoad()
+    {
+        var started = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        CancellationToken instancesToken = default;
+        var repository = new StubHeapObjectRepository(
+            async (_, _, cancellationToken) =>
+            {
+                instancesToken = cancellationToken;
+                started.SetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new OperationCanceledException(cancellationToken);
+            });
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(
+                Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
+            repository,
+            ImmediateUiDispatcher.Instance);
+        await viewModel.LoadAsync("sample.dmp");
+
+        viewModel.Types.SelectedType = viewModel.Types.FilteredTypes.Single();
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await viewModel.DisposeAsync();
+
+        Assert.True(instancesToken.IsCancellationRequested);
+        Assert.False(viewModel.ObjectInstances.HasError);
     }
 
     private static string FormatBytes(ulong value)
@@ -216,6 +297,37 @@ public sealed class SnapshotViewModelTests
         {
             Path = path;
             return _load(cancellationToken);
+        }
+    }
+
+    private sealed class StubHeapObjectRepository : IHeapObjectRepository
+    {
+        private readonly Func<
+            HeapSnapshot,
+            ulong,
+            CancellationToken,
+            Task<IReadOnlyList<HeapObjectInfo>>> _getInstances;
+
+        public StubHeapObjectRepository(IReadOnlyList<HeapObjectInfo> instances)
+            : this((_, _, _) => Task.FromResult(instances))
+        {
+        }
+
+        public StubHeapObjectRepository(
+            Func<HeapSnapshot, ulong, CancellationToken, Task<IReadOnlyList<HeapObjectInfo>>> getInstances)
+        {
+            _getInstances = getInstances;
+        }
+
+        public ulong? RequestedMethodTable { get; private set; }
+
+        public Task<IReadOnlyList<HeapObjectInfo>> GetInstancesAsync(
+            HeapSnapshot snapshot,
+            ulong methodTable,
+            CancellationToken cancellationToken = default)
+        {
+            RequestedMethodTable = methodTable;
+            return _getInstances(snapshot, methodTable, cancellationToken);
         }
     }
 }

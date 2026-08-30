@@ -130,6 +130,7 @@ internal readonly record struct HeapObjectData(
     string? TypeName,
     string? AssemblyName,
     ulong Size,
+    ulong Address = 0,
     bool IsValid = true,
     bool IsFree = false);
 
@@ -151,6 +152,8 @@ internal interface IHeapDumpSource : IDisposable
     bool CanWalkHeap { get; }
 
     IEnumerable<HeapObjectData> EnumerateObjects();
+
+    Generation? GetGeneration(ulong address);
 }
 
 internal sealed class ClrMdHeapDumpSourceFactory : IHeapDumpSourceFactory
@@ -209,9 +212,16 @@ internal sealed class ClrMdHeapDumpSource : IHeapDumpSource
                 type?.Name,
                 type?.Module?.AssemblyName,
                 heapObject.Size,
+                heapObject.Address,
                 heapObject.IsValid,
                 heapObject.IsFree);
         }
+    }
+
+    public Generation? GetGeneration(ulong address)
+    {
+        var segment = _runtime.Heap.GetSegmentByAddress(address);
+        return segment?.GetGeneration(address);
     }
 
     public void Dispose() => _dataTarget.Dispose();

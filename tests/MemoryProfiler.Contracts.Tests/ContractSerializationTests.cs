@@ -12,7 +12,7 @@ public sealed class ContractSerializationTests
     {
         new ProcessInfo(42, "WorkerService", "10.0.0"),
         new HeapTypeInfo(0x1000, "Example.Widget", "Example", 12, 1_024, 2_048),
-        new HeapObjectInfo(0x2000, 0x1000, "Example.Widget", 64),
+        new HeapObjectInfo(0x2000, 0x1000, "Example.Widget", 64, "Gen2"),
         new ObjectReference(0x2000, 0x3000, ReferenceKind.Field, "_child"),
         new GcRootInfo(0x4000, 0x2000, "Stack", "main"),
         new HeapSnapshotInfo("/tmp/example.dmp", "WorkerService", 42, "10.0.0",

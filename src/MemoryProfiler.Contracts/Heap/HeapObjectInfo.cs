@@ -4,4 +4,5 @@ public sealed record HeapObjectInfo(
     ulong Address,
     ulong MethodTable,
     string TypeName,
-    ulong Size);
+    ulong Size,
+    string Generation);
