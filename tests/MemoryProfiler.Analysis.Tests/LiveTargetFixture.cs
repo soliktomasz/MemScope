@@ -16,7 +16,14 @@ internal sealed class LiveTargetFixture : IAsyncDisposable
 
     public string SocketRoot { get; }
 
-    public static async Task<LiveTargetFixture> StartAsync()
+    public static Task<LiveTargetFixture> StartAsync() =>
+        StartAsync(leakPhase: false);
+
+    // Leak phase arms the target for the snapshot-comparison acceptance test:
+    // it pre-allocates a fixed baseline chunk set, signals READY, then blocks on
+    // stdin until StartLeakAsync sends the "LEAK" signal. A before-dump captured
+    // right after StartAsync therefore contains exactly the baseline.
+    public static async Task<LiveTargetFixture> StartAsync(bool leakPhase)
     {
         var socketRoot = ResolveShortSocketRoot();
         var targetAssembly = Path.Combine(
@@ -26,9 +33,15 @@ internal sealed class LiveTargetFixture : IAsyncDisposable
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = leakPhase,
             UseShellExecute = false,
         };
         startInfo.ArgumentList.Add(targetAssembly);
+        if (leakPhase)
+        {
+            startInfo.ArgumentList.Add("--leak");
+        }
+
         startInfo.Environment["TMPDIR"] = socketRoot;
 
         var process = Process.Start(startInfo)
@@ -55,6 +68,30 @@ internal sealed class LiveTargetFixture : IAsyncDisposable
             await StopAndDisposeAsync(process);
             throw;
         }
+    }
+
+    // Signals the leak-mode target to start growing its unbounded chunk list and
+    // waits until it confirms the leak loop is running, so a dump captured right
+    // after this call contains leaked chunks. The target's stdout can carry
+    // unrelated lines ([createdump] progress from a prior dump capture), so the
+    // confirmation is searched for rather than expected on the next line.
+    public async Task StartLeakAsync()
+    {
+        await _process.StandardInput.WriteLineAsync("LEAK");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (!timeout.IsCancellationRequested)
+        {
+            var line = await _process.StandardOutput
+                .ReadLineAsync()
+                .WaitAsync(timeout.Token);
+            if (line == "LEAKING")
+            {
+                return;
+            }
+        }
+
+        throw new TimeoutException(
+            "The leak-mode target did not confirm the leak loop.");
     }
 
     private static string ResolveShortSocketRoot()
