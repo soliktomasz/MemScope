@@ -157,7 +157,9 @@ internal interface IHeapDumpSource : IDisposable
 
     IEnumerable<ObjectReference> EnumerateOutgoingReferences(ulong sourceAddress);
 
-    IEnumerable<ObjectReference> EnumerateIncomingReferences(ulong targetAddress);
+    IEnumerable<ObjectReference> EnumerateIncomingReferences(
+        ulong targetAddress,
+        CancellationToken cancellationToken);
 }
 
 internal sealed class ClrMdHeapDumpSourceFactory : IHeapDumpSourceFactory
@@ -257,15 +259,15 @@ internal sealed class ClrMdHeapDumpSource : IHeapDumpSource
         }
     }
 
-    public IEnumerable<ObjectReference> EnumerateIncomingReferences(ulong targetAddress)
+    public IEnumerable<ObjectReference> EnumerateIncomingReferences(
+        ulong targetAddress,
+        CancellationToken cancellationToken)
     {
         var heap = _runtime.Heap;
         foreach (var heapObject in heap.EnumerateObjects())
         {
-            if (!heapObject.IsValid ||
-                heapObject.IsFree ||
-                heapObject.Address == 0 ||
-                heapObject.Address == targetAddress)
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!heapObject.IsValid || heapObject.IsFree || heapObject.Address == 0)
             {
                 continue;
             }
@@ -292,6 +294,7 @@ internal sealed class ClrMdHeapDumpSource : IHeapDumpSource
 
         foreach (var root in heap.EnumerateRoots())
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var rootObject = root.Object;
             if (rootObject.IsNull || rootObject.Address != targetAddress)
             {
@@ -304,11 +307,26 @@ internal sealed class ClrMdHeapDumpSource : IHeapDumpSource
                 root.RootKind is ClrRootKind.StaticVar or ClrRootKind.ThreadStaticVar
                     ? ReferenceKind.StaticField
                     : ReferenceKind.Handle,
-                Name: null,
+                Name: RootKindLabel(root.RootKind),
                 SourceTypeName: null,
                 TargetTypeName: rootObject.Type?.Name);
         }
     }
+
+    internal static string RootKindLabel(ClrRootKind kind) =>
+        kind switch
+        {
+            ClrRootKind.StaticVar => "Static field",
+            ClrRootKind.ThreadStaticVar => "Thread static",
+            ClrRootKind.Stack => "Stack",
+            ClrRootKind.FinalizerQueue => "Finalizer queue",
+            ClrRootKind.StrongHandle => "GC handle",
+            ClrRootKind.PinnedHandle => "Pinned handle",
+            ClrRootKind.RefCountedHandle => "Ref-counted handle",
+            ClrRootKind.AsyncPinnedHandle => "Async pinned handle",
+            ClrRootKind.SizedRefHandle => "Sized ref handle",
+            _ => "GC root",
+        };
 
     public void Dispose() => _dataTarget.Dispose();
 

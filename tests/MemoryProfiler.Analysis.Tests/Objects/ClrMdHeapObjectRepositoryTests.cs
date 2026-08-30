@@ -263,7 +263,9 @@ public sealed class ClrMdHeapObjectRepositoryTests
 
         public IEnumerable<ObjectReference> EnumerateOutgoingReferences(ulong sourceAddress) => [];
 
-        public IEnumerable<ObjectReference> EnumerateIncomingReferences(ulong targetAddress) => [];
+        public IEnumerable<ObjectReference> EnumerateIncomingReferences(
+            ulong targetAddress,
+            CancellationToken cancellationToken) => [];
 
         public IEnumerable<HeapObjectData> EnumerateObjects()
         {

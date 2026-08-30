@@ -86,7 +86,7 @@ public sealed class ClrMdObjectReferenceService : IObjectReferenceService
         }
 
         var references = new List<ObjectReference>();
-        foreach (var reference in source.EnumerateIncomingReferences(objectAddress))
+        foreach (var reference in source.EnumerateIncomingReferences(objectAddress, cancellationToken))
         {
             cancellationToken.ThrowIfCancellationRequested();
             references.Add(reference);

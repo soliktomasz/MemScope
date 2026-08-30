@@ -158,6 +158,22 @@ public sealed class ClrMdObjectReferenceServiceTests
         Assert.Empty(references);
     }
 
+    [Theory]
+    [InlineData(ClrRootKind.StaticVar, "Static field")]
+    [InlineData(ClrRootKind.ThreadStaticVar, "Thread static")]
+    [InlineData(ClrRootKind.Stack, "Stack")]
+    [InlineData(ClrRootKind.FinalizerQueue, "Finalizer queue")]
+    [InlineData(ClrRootKind.StrongHandle, "GC handle")]
+    [InlineData(ClrRootKind.PinnedHandle, "Pinned handle")]
+    [InlineData(ClrRootKind.RefCountedHandle, "Ref-counted handle")]
+    [InlineData(ClrRootKind.AsyncPinnedHandle, "Async pinned handle")]
+    [InlineData(ClrRootKind.SizedRefHandle, "Sized ref handle")]
+    [InlineData(ClrRootKind.None, "GC root")]
+    public void RootKindLabelMapsEveryValue(ClrRootKind kind, string expected)
+    {
+        Assert.Equal(expected, ClrMdHeapDumpSource.RootKindLabel(kind));
+    }
+
     [Fact]
     public async Task GetOutgoingReferencesRejectsAHeapThatCannotBeWalked()
     {
@@ -320,7 +336,9 @@ public sealed class ClrMdObjectReferenceServiceTests
             return Outgoing;
         }
 
-        public IEnumerable<ObjectReference> EnumerateIncomingReferences(ulong targetAddress)
+        public IEnumerable<ObjectReference> EnumerateIncomingReferences(
+            ulong targetAddress,
+            CancellationToken cancellationToken)
         {
             OnIncomingEnumerated?.Invoke();
             return Incoming;

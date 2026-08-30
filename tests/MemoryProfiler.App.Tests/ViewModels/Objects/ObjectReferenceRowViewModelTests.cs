@@ -87,6 +87,20 @@ public sealed class ObjectReferenceRowViewModelTests
     }
 
     [Fact]
+    public void IncomingRootRowWithRootKindNameShowsItAsTheField()
+    {
+        var row = new ObjectReferenceRowViewModel(
+            new ObjectReference(0, 0x1000, ReferenceKind.Handle, "Stack",
+                SourceTypeName: null, TargetTypeName: "MyApp.Widget"),
+            ReferenceDirection.Incoming);
+
+        Assert.True(row.IsRoot);
+        Assert.Equal("Stack", row.FieldDisplay);
+        Assert.Equal("GC handle", row.KindDisplay);
+        Assert.Equal("root", row.AddressDisplay);
+    }
+
+    [Fact]
     public void MissingEndpointTypeNameFallsBackToNA()
     {
         var row = new ObjectReferenceRowViewModel(

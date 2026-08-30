@@ -207,7 +207,9 @@ public sealed class ClrMdHeapSnapshotLoaderTests
 
         public IEnumerable<ObjectReference> EnumerateOutgoingReferences(ulong sourceAddress) => [];
 
-        public IEnumerable<ObjectReference> EnumerateIncomingReferences(ulong targetAddress) => [];
+        public IEnumerable<ObjectReference> EnumerateIncomingReferences(
+            ulong targetAddress,
+            CancellationToken cancellationToken) => [];
 
         public void Dispose() => Disposed = true;
     }
