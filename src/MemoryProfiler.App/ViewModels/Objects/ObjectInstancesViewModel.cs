@@ -74,6 +74,11 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
         var linked = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
             _disposeCancellation.Token);
+        // Capture the token struct up front: the source may be disposed while
+        // the load is in flight, and CancellationTokenSource.Token throws
+        // ObjectDisposedException after dispose, which would break the
+        // cancellation filter below.
+        var linkedToken = linked.Token;
         _loadCancellation = linked;
 
         await PublishAsync(() =>
@@ -102,7 +107,7 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
         try
         {
             var instances = await _repository
-                .GetInstancesAsync(snapshot, type.MethodTable, linked.Token)
+                .GetInstancesAsync(snapshot, type.MethodTable, linkedToken)
                 .ConfigureAwait(false);
 
             // Build the rows off the UI thread. The collection is swapped in a
@@ -136,7 +141,7 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
                 NotifyDisplayStateChanged();
             }).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (linked.Token.IsCancellationRequested)
+        catch (OperationCanceledException) when (linkedToken.IsCancellationRequested)
         {
             // A newer selection, deselection, or disposal superseded this load.
         }

@@ -154,6 +154,12 @@ internal interface IHeapDumpSource : IDisposable
     IEnumerable<HeapObjectData> EnumerateObjects();
 
     Generation? GetGeneration(ulong address);
+
+    IEnumerable<ObjectReference> EnumerateOutgoingReferences(ulong sourceAddress);
+
+    IEnumerable<ObjectReference> EnumerateIncomingReferences(
+        ulong targetAddress,
+        CancellationToken cancellationToken);
 }
 
 internal sealed class ClrMdHeapDumpSourceFactory : IHeapDumpSourceFactory
@@ -223,6 +229,104 @@ internal sealed class ClrMdHeapDumpSource : IHeapDumpSource
         var segment = _runtime.Heap.GetSegmentByAddress(address);
         return segment?.GetGeneration(address);
     }
+
+    public IEnumerable<ObjectReference> EnumerateOutgoingReferences(ulong sourceAddress)
+    {
+        var heap = _runtime.Heap;
+        var source = heap.GetObject(sourceAddress);
+        if (source.IsNull || !source.IsValid || source.IsFree)
+        {
+            yield break;
+        }
+
+        foreach (var reference in source.EnumerateReferencesWithFields(
+            carefully: true,
+            considerDependantHandles: false))
+        {
+            var target = reference.Object;
+            if (target.IsNull || !target.IsValid || target.IsFree || target.Address == 0)
+            {
+                continue;
+            }
+
+            yield return new ObjectReference(
+                sourceAddress,
+                target.Address,
+                reference.IsArrayElement ? ReferenceKind.ArrayElement : ReferenceKind.Field,
+                reference.Field?.Name,
+                SourceTypeName: source.Type?.Name,
+                TargetTypeName: target.Type?.Name);
+        }
+    }
+
+    public IEnumerable<ObjectReference> EnumerateIncomingReferences(
+        ulong targetAddress,
+        CancellationToken cancellationToken)
+    {
+        var heap = _runtime.Heap;
+        foreach (var heapObject in heap.EnumerateObjects())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!heapObject.IsValid || heapObject.IsFree || heapObject.Address == 0)
+            {
+                continue;
+            }
+
+            foreach (var reference in heapObject.EnumerateReferencesWithFields(
+                carefully: true,
+                considerDependantHandles: false))
+            {
+                var candidate = reference.Object;
+                if (candidate.IsNull || candidate.Address != targetAddress)
+                {
+                    continue;
+                }
+
+                yield return new ObjectReference(
+                    heapObject.Address,
+                    targetAddress,
+                    reference.IsArrayElement ? ReferenceKind.ArrayElement : ReferenceKind.Field,
+                    reference.Field?.Name,
+                    SourceTypeName: heapObject.Type?.Name,
+                    TargetTypeName: candidate.Type?.Name);
+            }
+        }
+
+        foreach (var root in heap.EnumerateRoots())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var rootObject = root.Object;
+            if (rootObject.IsNull || rootObject.Address != targetAddress)
+            {
+                continue;
+            }
+
+            yield return new ObjectReference(
+                0,
+                targetAddress,
+                root.RootKind is ClrRootKind.StaticVar or ClrRootKind.ThreadStaticVar
+                    ? ReferenceKind.StaticField
+                    : ReferenceKind.Handle,
+                Name: RootKindLabel(root.RootKind),
+                SourceTypeName: null,
+                TargetTypeName: rootObject.Type?.Name);
+        }
+    }
+
+    internal static string RootKindLabel(ClrRootKind kind) =>
+        kind switch
+        {
+            ClrRootKind.StaticVar => "Static field",
+            ClrRootKind.ThreadStaticVar => "Thread static",
+            ClrRootKind.Stack => "Stack",
+            ClrRootKind.FinalizerQueue => "Finalizer queue",
+            ClrRootKind.StrongHandle => "GC handle",
+            ClrRootKind.PinnedHandle => "Pinned handle",
+            ClrRootKind.RefCountedHandle => "Ref-counted handle",
+            ClrRootKind.AsyncPinnedHandle => "Async pinned handle",
+            ClrRootKind.SizedRefHandle => "Sized ref handle",
+            _ => "GC root",
+        };
 
     public void Dispose() => _dataTarget.Dispose();
 

@@ -79,6 +79,26 @@
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
     </Style>
+    <Style Selector="ListBox.reference-list">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="ListBox.reference-list ListBoxItem">
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
+    </Style>
+    <Style Selector="Button.direction-button">
+      <Setter Property="MinHeight" Value="26" />
+      <Setter Property="Padding" Value="12,3" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
+    </Style>
+    <Style Selector="Button.direction-button.active">
+      <Setter Property="Background" Value="{DynamicResource AppAccentBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentForegroundBrush}" />
+    </Style>
   </UserControl.Styles>
 
   <Grid Margin="32,26,32,28"
@@ -351,12 +371,15 @@
                     VerticalAlignment="Stretch"
                     Background="{DynamicResource AppBorderBrush}" />
 
-      <Border Grid.Row="2"
-              MinHeight="150"
-              BorderBrush="{DynamicResource AppBorderBrush}"
-              BorderThickness="1"
-              CornerRadius="{DynamicResource AppCornerRadius}"
-              Padding="14,10">
+      <Grid Grid.Row="2"
+            ColumnDefinitions="*,6,*">
+        <Border Grid.Column="0"
+                MinHeight="150"
+                MinWidth="300"
+                BorderBrush="{DynamicResource AppBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="{DynamicResource AppCornerRadius}"
+                Padding="14,10">
         <Grid RowDefinitions="Auto,Auto,*"
               RowSpacing="8">
           <Grid Grid.Row="0"
@@ -463,6 +486,16 @@
                      IsVisible="{Binding ObjectInstances.ShowTable}"
                      AutomationProperties.Name="Object instances"
                      ItemsSource="{Binding ObjectInstances.Instances}">
+              <ListBox.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="Show Outgoing References"
+                            Command="{Binding ShowOutgoingReferencesCommand}"
+                            CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
+                  <MenuItem Header="Show Incoming References"
+                            Command="{Binding ShowIncomingReferencesCommand}"
+                            CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
+                </ContextMenu>
+              </ListBox.ContextMenu>
               <ListBox.ItemsPanel>
                 <ItemsPanelTemplate>
                   <VirtualizingStackPanel />
@@ -494,6 +527,197 @@
           </Grid>
         </Grid>
       </Border>
+
+      <GridSplitter Grid.Column="1"
+                    Width="6"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch"
+                    Background="{DynamicResource AppBorderBrush}" />
+
+      <Border Grid.Column="2"
+              MinHeight="150"
+              MinWidth="300"
+              BorderBrush="{DynamicResource AppBorderBrush}"
+              BorderThickness="1"
+              CornerRadius="{DynamicResource AppCornerRadius}"
+              Padding="14,10">
+        <Grid RowDefinitions="Auto,Auto,*"
+              RowSpacing="8">
+          <Grid Grid.Row="0"
+                ColumnDefinitions="*,Auto"
+                ColumnSpacing="16">
+            <StackPanel Spacing="2">
+              <StackPanel Orientation="Horizontal"
+                          Spacing="10">
+                <TextBlock Classes="section-label"
+                           VerticalAlignment="Center"
+                           Text="REFERENCES" />
+                <Button Classes="direction-button"
+                        Classes.active="{Binding ObjectReferences.IsOutgoing}"
+                        AutomationProperties.Name="Show outgoing references"
+                        Command="{Binding ObjectReferences.ShowOutgoingCommand}"
+                        Content="Outgoing" />
+                <Button Classes="direction-button"
+                        Classes.active="{Binding ObjectReferences.IsIncoming}"
+                        AutomationProperties.Name="Show incoming references"
+                        Command="{Binding ObjectReferences.ShowIncomingCommand}"
+                        Content="Incoming" />
+              </StackPanel>
+              <TextBlock MaxWidth="420"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource AppTextPrimaryBrush}"
+                         TextTrimming="CharacterEllipsis"
+                         ToolTip.Tip="{Binding ObjectReferences.ObjectTypeName}"
+                         Text="{Binding ObjectReferences.ObjectTypeName}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Bottom"
+                        Spacing="12">
+              <TextBlock Classes="secondary"
+                         FontSize="12"
+                         VerticalAlignment="Center"
+                         Text="{Binding ObjectReferences.AddressDisplay}" />
+              <TextBlock Classes="secondary"
+                         FontSize="12"
+                         VerticalAlignment="Center"
+                         Text="{Binding ObjectReferences.SummaryDisplay}" />
+              <ProgressBar Width="140"
+                           Height="2"
+                           IsIndeterminate="True"
+                           IsVisible="{Binding ObjectReferences.ShowLoading}"
+                           AutomationProperties.Name="Loading object references"
+                           AutomationProperties.LiveSetting="Polite" />
+            </StackPanel>
+          </Grid>
+
+          <Grid Grid.Row="1"
+                IsVisible="{Binding ObjectReferences.ShowTable}"
+                ColumnDefinitions="*,120,140,*"
+                ColumnSpacing="8"
+                Background="{DynamicResource AppSurfaceSubtleBrush}">
+            <TextBlock Grid.Column="0" Classes="table-header" Text="Field" />
+            <TextBlock Grid.Column="1" Classes="table-header" Text="Kind" />
+            <TextBlock Grid.Column="2" Classes="table-header" Text="Address" />
+            <TextBlock Grid.Column="3" Classes="table-header" Text="Type" />
+          </Grid>
+
+          <Grid Grid.Row="2">
+            <StackPanel IsVisible="{Binding ObjectReferences.ShowIdle}"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Margin="0,12"
+                        Spacing="6">
+              <TextBlock HorizontalAlignment="Center"
+                         Classes="secondary"
+                         Text="Select an object and choose Show Outgoing or Show Incoming References" />
+            </StackPanel>
+
+            <StackPanel IsVisible="{Binding ObjectReferences.ShowLoading}"
+                        Margin="0,8"
+                        Spacing="10">
+              <Grid ColumnDefinitions="*,120,140,*" ColumnSpacing="8">
+                <Border Grid.Column="0" Classes="skeleton" />
+                <Border Grid.Column="1" Classes="skeleton" />
+                <Border Grid.Column="2" Classes="skeleton" />
+                <Border Grid.Column="3" Classes="skeleton" />
+              </Grid>
+              <Grid ColumnDefinitions="*,120,140,*" ColumnSpacing="8">
+                <Border Grid.Column="0" Classes="skeleton" />
+                <Border Grid.Column="1" Classes="skeleton" />
+                <Border Grid.Column="2" Classes="skeleton" />
+                <Border Grid.Column="3" Classes="skeleton" />
+              </Grid>
+              <Grid ColumnDefinitions="*,120,140,*" ColumnSpacing="8">
+                <Border Grid.Column="0" Classes="skeleton" />
+                <Border Grid.Column="1" Classes="skeleton" />
+                <Border Grid.Column="2" Classes="skeleton" />
+                <Border Grid.Column="3" Classes="skeleton" />
+              </Grid>
+            </StackPanel>
+
+            <Border IsVisible="{Binding ObjectReferences.ShowError}"
+                    Margin="0,6"
+                    Padding="12,9"
+                    CornerRadius="{DynamicResource AppCornerRadius}"
+                    AutomationProperties.Name="{Binding ObjectReferences.ErrorMessage}"
+                    AutomationProperties.LiveSetting="Assertive"
+                    Background="{DynamicResource AppErrorSurfaceBrush}">
+              <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
+                         FontSize="13"
+                         TextWrapping="Wrap"
+                         Text="{Binding ObjectReferences.ErrorMessage}" />
+            </Border>
+
+            <StackPanel IsVisible="{Binding ObjectReferences.ShowEmpty}"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Margin="0,12"
+                        Spacing="4">
+              <TextBlock HorizontalAlignment="Center"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource AppTextPrimaryBrush}"
+                         Text="No references" />
+              <TextBlock HorizontalAlignment="Center"
+                         Classes="secondary"
+                         Text="{Binding ObjectReferences.EmptyHint}" />
+            </StackPanel>
+
+            <ListBox Classes="reference-list"
+                     IsVisible="{Binding ObjectReferences.ShowTable}"
+                     AutomationProperties.Name="Object references"
+                     ItemsSource="{Binding ObjectReferences.References}"
+                     DoubleTapped="OnReferencesListDoubleTapped">
+              <ListBox.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="Show Outgoing References"
+                            Command="{Binding ShowOutgoingReferencesCommand}"
+                            CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
+                  <MenuItem Header="Show Incoming References"
+                            Command="{Binding ShowIncomingReferencesCommand}"
+                            CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
+                </ContextMenu>
+              </ListBox.ContextMenu>
+              <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <VirtualizingStackPanel />
+                </ItemsPanelTemplate>
+              </ListBox.ItemsPanel>
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="objects:ObjectReferenceRowViewModel">
+                  <Grid ColumnDefinitions="*,120,140,*"
+                        ColumnSpacing="8"
+                        MinHeight="30">
+                    <TextBlock Grid.Column="0"
+                               Margin="8,0"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="{Binding FieldDisplay}"
+                               Foreground="{DynamicResource AppTextPrimaryBrush}"
+                               Text="{Binding FieldDisplay}" />
+                    <TextBlock Grid.Column="1"
+                               VerticalAlignment="Center"
+                               Classes="secondary"
+                               Text="{Binding KindDisplay}" />
+                    <TextBlock Grid.Column="2"
+                               VerticalAlignment="Center"
+                               Classes="mono-data"
+                               Text="{Binding AddressDisplay}" />
+                    <TextBlock Grid.Column="3"
+                               Margin="0,0,8,0"
+                               VerticalAlignment="Center"
+                               Classes="secondary"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="{Binding TypeNameDisplay}"
+                               Text="{Binding TypeNameDisplay}" />
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Grid>
+        </Grid>
+      </Border>
+      </Grid>
     </Grid>
   </Grid>
 </UserControl>

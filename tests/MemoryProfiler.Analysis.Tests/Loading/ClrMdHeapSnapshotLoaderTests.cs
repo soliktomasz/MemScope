@@ -1,5 +1,6 @@
 using Microsoft.Diagnostics.Runtime;
 using MemoryProfiler.Analysis.Loading;
+using MemoryProfiler.Contracts.Heap;
 using Xunit;
 
 namespace MemoryProfiler.Analysis.Tests.Loading;
@@ -203,6 +204,12 @@ public sealed class ClrMdHeapSnapshotLoaderTests
         }
 
         public Generation? GetGeneration(ulong address) => null;
+
+        public IEnumerable<ObjectReference> EnumerateOutgoingReferences(ulong sourceAddress) => [];
+
+        public IEnumerable<ObjectReference> EnumerateIncomingReferences(
+            ulong targetAddress,
+            CancellationToken cancellationToken) => [];
 
         public void Dispose() => Disposed = true;
     }
