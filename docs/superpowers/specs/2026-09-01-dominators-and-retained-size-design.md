@@ -61,7 +61,7 @@ For a heap of ~1M objects this is a few hundred MB of managed memory for the dur
 
 A synthetic start node connects to every reachable root (`idom[root] = start`). The classic iterative algorithm runs over the reachable subgraph in BFS order:
 
-```
+```text
 idom[start] = start
 changed = true
 while changed:
@@ -79,9 +79,9 @@ while changed:
 
 ### 4. Retained sizes
 
-With `idom` fixed, children lists are built (`children[idom[n]].Add(n)`) and accumulated in post order:
+With `idom` fixed, retained sizes are accumulated bottom-up in reverse BFS order (every parent precedes its children in the BFS order):
 
-```
+```text
 retainedSize[n]  = shallowSize[n]  + Σ retainedSize[c]   over children c
 retainedCount[n] = 1               + Σ retainedCount[c]  over children c
 ```
@@ -90,10 +90,10 @@ retainedCount[n] = 1               + Σ retainedCount[c]  over children c
 
 ### 5. Per-type retained sizes
 
-A naive sum of per-object retained sizes double-counts when an object of type `T` dominates another object of type `T` (e.g. an outer `byte[][]` dominating inner `byte[]`s). The type-level contribution of an object excludes same-type dominated subtrees:
+A naive sum of per-object retained sizes double-counts nested same-type objects: if a `Node` dominates a `Node[]` that dominates another `Node`, the inner `Node`'s subtree lies inside the outer `Node`'s retained size too. Each object therefore contributes its retained size only when no same-type ancestor exists in the dominator tree — equivalently, an object's retained size covers all of its **nearest same-type descendants** (reached by traversing through different-type nodes, stopping beneath each same-type descendant), and those descendants are not counted again. One forward pass over the BFS order tracks whether a same-type ancestor exists:
 
-```
-contribution(o) = retainedSize(o) − Σ retainedSize(c)  over children c with type(c) == type(o)
+```text
+contribution(o) = retainedSize(o)  if no same-type ancestor of o exists in the dominator tree
 typeRetained[type(o)] += contribution(o)
 ```
 
@@ -138,7 +138,7 @@ public sealed record DominatorAnalysisResult(
 `DominatorTreeService` mirrors the other analysis services:
 
 - Reuses the internal `IHeapDumpSourceFactory` / `IHeapDumpSource` seam (stubbed the same way in unit tests), runs inside `Task.Run`, validates snapshot/path, and fails with `InvalidDataException` when the heap cannot be walked.
-- **Cache**: `ConcurrentDictionary<(string Path, DateTimeOffset CapturedAt), DominatorAnalysisResult>` keyed on the snapshot's dump identity; a cache hit skips the heap entirely. A re-captured dump to the same path has a different dump timestamp, so it gets its own entry. Documented trade-off: unbounded across distinct snapshots for V1.
+- **Cache**: `ConditionalWeakTable<HeapSnapshot, DominatorAnalysisResult>` keyed on the snapshot instance, so a result lives exactly as long as the snapshot it was computed for: closing and releasing a snapshot makes its entry (and the `DominatorInfo` graph it holds) eligible for collection, and the cache cannot grow across the whole application session. A cache hit skips the heap entirely; a re-captured dump is a different snapshot instance and is recomputed.
 - **Progress**: `IProgress<double>` reported as 0.0→1.0 across graph build (0.00–0.35), reachability (0.35–0.45), dominator iterations (0.45–0.90), and retained accumulation (0.90–1.00); throttled to periodic reports, `null` progress is a no-op.
 - **Cancellation**: checked per object/node in every phase; the dump source is disposed on all paths.
 

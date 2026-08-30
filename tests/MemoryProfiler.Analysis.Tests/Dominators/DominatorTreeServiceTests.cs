@@ -141,6 +141,75 @@ public sealed class DominatorTreeServiceTests
     }
 
     [Fact]
+    public async Task DiamondWithUnequalPathLengthsConvergesThroughTheSyntheticRoot()
+    {
+        var source = CreateSource();
+        source.Objects.AddRange(
+        [
+            Object(0x1000, "MyApp.R1", 10, 0x100),
+            Object(0x2000, "MyApp.R2", 20, 0x200),
+            Object(0x3000, "MyApp.A", 30, 0x300),
+            Object(0x4000, "MyApp.B", 40, 0x400),
+            Object(0x5000, "MyApp.C", 50, 0x500),
+            Object(0x6000, "MyApp.D", 60, 0x600),
+            Object(0x7000, "MyApp.E", 70, 0x700),
+        ]);
+        source.Roots.AddRange(
+        [
+            new ClrRootData(0x1000, ClrRootKind.StaticVar, "MyApp.R1"),
+            new ClrRootData(0x2000, ClrRootKind.StaticVar, "MyApp.R2"),
+        ]);
+        // D is reached through two disjoint paths of different lengths
+        // (R1 -> A -> D and R2 -> B -> C -> D): neither A nor C dominates D,
+        // so D's immediate dominator is the synthetic root and its retained
+        // size excludes the paths that reach it.
+        source.Outgoing[0x1000] =
+        [
+            new ObjectReference(0x1000, 0x3000, ReferenceKind.Field, "_a", "MyApp.R1", "MyApp.A"),
+        ];
+        source.Outgoing[0x3000] =
+        [
+            new ObjectReference(0x3000, 0x6000, ReferenceKind.Field, "_d", "MyApp.A", "MyApp.D"),
+        ];
+        source.Outgoing[0x2000] =
+        [
+            new ObjectReference(0x2000, 0x4000, ReferenceKind.Field, "_b", "MyApp.R2", "MyApp.B"),
+        ];
+        source.Outgoing[0x4000] =
+        [
+            new ObjectReference(0x4000, 0x5000, ReferenceKind.Field, "_c", "MyApp.B", "MyApp.C"),
+        ];
+        source.Outgoing[0x5000] =
+        [
+            new ObjectReference(0x5000, 0x6000, ReferenceKind.Field, "_d", "MyApp.C", "MyApp.D"),
+        ];
+        source.Outgoing[0x6000] =
+        [
+            new ObjectReference(0x6000, 0x7000, ReferenceKind.Field, "_e", "MyApp.D", "MyApp.E"),
+        ];
+        var service = new DominatorTreeService(new StubHeapDumpSourceFactory(source));
+
+        var result = await service.ComputeDominatorsAsync(Snapshot());
+
+        // D converges on the synthetic root: it retains only its own subtree
+        // (D + E), and each path node retains just its own chain — A does not
+        // retain D and C does not retain D, so every object's memory is
+        // counted exactly once across the dominator tree.
+        var d = Assert.Single(result.Dominators, info => info.ObjectAddress == 0x6000);
+        Assert.Equal(130UL, d.RetainedSize); // D + E.
+        Assert.Equal(2, d.RetainedObjectCount);
+        var a = Assert.Single(result.Dominators, info => info.ObjectAddress == 0x3000);
+        Assert.Equal(30UL, a.RetainedSize);
+        Assert.Equal(1, a.RetainedObjectCount);
+        var c = Assert.Single(result.Dominators, info => info.ObjectAddress == 0x5000);
+        Assert.Equal(50UL, c.RetainedSize);
+        Assert.Equal(1, c.RetainedObjectCount);
+        var b = Assert.Single(result.Dominators, info => info.ObjectAddress == 0x4000);
+        Assert.Equal(90UL, b.RetainedSize); // B + C.
+        Assert.Equal(2, b.RetainedObjectCount);
+    }
+
+    [Fact]
     public async Task CyclesTerminateAndAccumulateOnce()
     {
         var source = CreateSource();
@@ -234,6 +303,49 @@ public sealed class DominatorTreeServiceTests
         var byteArrays = Assert.Single(
             result.TypeRetainedSizes, type => type.MethodTable == 0x200);
         Assert.Equal(200UL, byteArrays.RetainedSize); // 100 + 60 + 40, no doubling.
+    }
+
+    [Fact]
+    public async Task SameTypeDominanceThroughAnIntermediateTypeDoesNotDoubleCount()
+    {
+        var source = CreateSource();
+        // Outer Node dominates a Node[] that dominates an inner Node: the inner
+        // Node's subtree is nested inside the outer Node's retained size, so
+        // the type-level total must count it once (via the outer Node), not
+        // once for the outer Node and again for the inner Node.
+        source.Objects.AddRange(
+        [
+            Object(0x1000, "MyApp.Root", 10, 0x100),
+            Object(0x2000, "MyApp.Node", 100, 0x200),
+            Object(0x3000, "MyApp.Node[]", 24, 0x300),
+            Object(0x4000, "MyApp.Node", 60, 0x200),
+        ]);
+        source.Roots.AddRange([new ClrRootData(0x1000, ClrRootKind.StaticVar, "MyApp.Program._root")]);
+        source.Outgoing[0x1000] =
+        [
+            new ObjectReference(0x1000, 0x2000, ReferenceKind.Field, "_node", "MyApp.Root", "MyApp.Node"),
+        ];
+        source.Outgoing[0x2000] =
+        [
+            new ObjectReference(0x2000, 0x3000, ReferenceKind.Field, "_children", "MyApp.Node", "MyApp.Node[]"),
+        ];
+        source.Outgoing[0x3000] =
+        [
+            new ObjectReference(0x3000, 0x4000, ReferenceKind.ArrayElement, null, "MyApp.Node[]", "MyApp.Node"),
+        ];
+        var service = new DominatorTreeService(new StubHeapDumpSourceFactory(source));
+
+        var result = await service.ComputeDominatorsAsync(Snapshot());
+
+        // Node[] dominates the inner Node, so its retained size covers both;
+        // the inner Node must not be counted again inside the Node type total
+        // (which is exactly the outer Node's retained size: 100 + 24 + 60).
+        var nodeType = Assert.Single(
+            result.TypeRetainedSizes, type => type.MethodTable == 0x200);
+        Assert.Equal(184UL, nodeType.RetainedSize); // 100 + 24 + 60, no doubling.
+        var nodeArrayType = Assert.Single(
+            result.TypeRetainedSizes, type => type.MethodTable == 0x300);
+        Assert.Equal(84UL, nodeArrayType.RetainedSize); // 24 + 60 (dominates inner).
     }
 
     [Fact]

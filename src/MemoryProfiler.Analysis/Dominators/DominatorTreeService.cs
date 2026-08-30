@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Contracts.Heap;
 
@@ -18,7 +18,12 @@ public sealed class DominatorTreeService : IDominatorTreeService
     private const ulong SyntheticRoot = 0;
 
     private readonly IHeapDumpSourceFactory _sourceFactory;
-    private readonly ConcurrentDictionary<SnapshotKey, DominatorAnalysisResult> _cache = new();
+
+    // Keyed on the HeapSnapshot instance so a result lives exactly as long as
+    // the snapshot it was computed for: closing and releasing a snapshot makes
+    // its entry (and the DominatorInfo graph it holds) eligible for collection,
+    // so the cache cannot retain every snapshot across the application session.
+    private readonly ConditionalWeakTable<HeapSnapshot, DominatorAnalysisResult> _cache = new();
 
     public DominatorTreeService()
         : this(new ClrMdHeapDumpSourceFactory())
@@ -39,9 +44,7 @@ public sealed class DominatorTreeService : IDominatorTreeService
         Validate(snapshot);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var fullPath = Path.GetFullPath(snapshot.Info.Path);
-        var key = new SnapshotKey(fullPath, snapshot.Info.CapturedAt);
-        if (_cache.TryGetValue(key, out var cached))
+        if (_cache.TryGetValue(snapshot, out var cached))
         {
             progress?.Report(1.0);
             return Task.FromResult(cached);
@@ -49,14 +52,15 @@ public sealed class DominatorTreeService : IDominatorTreeService
 
         // The computation is expensive: off the caller thread, cancellable,
         // with the result cached per snapshot so later queries reuse it.
+        var fullPath = Path.GetFullPath(snapshot.Info.Path);
         return Task.Run(
-            () => Compute(fullPath, key, snapshot.Info.ObjectCount, progress, cancellationToken),
+            () => Compute(fullPath, snapshot, snapshot.Info.ObjectCount, progress, cancellationToken),
             cancellationToken);
     }
 
     private DominatorAnalysisResult Compute(
         string path,
-        SnapshotKey key,
+        HeapSnapshot snapshot,
         long totalObjects,
         IProgress<double>? progress,
         CancellationToken cancellationToken)
@@ -161,7 +165,6 @@ public sealed class DominatorTreeService : IDominatorTreeService
         // common ancestor using the BFS depth, which strictly decreases along
         // every dominator chain.
         var idom = new Dictionary<ulong, ulong>(order.Count + 1) { [SyntheticRoot] = SyntheticRoot };
-        var children = new Dictionary<ulong, List<ulong>>();
         var changed = true;
         var iteration = 1;
         while (changed)
@@ -209,19 +212,9 @@ public sealed class DominatorTreeService : IDominatorTreeService
             iteration++;
         }
 
-        // Children lists fix the dominator tree; a BFS order lists every parent
-        // before its children, so the reverse pass accumulates bottom-up.
-        foreach (var address in order)
-        {
-            var parent = idom[address];
-            if (!children.TryGetValue(parent, out var list))
-            {
-                children[parent] = list = [];
-            }
-
-            list.Add(address);
-        }
-
+        // The dominator tree is a BFS-ordered hierarchy: every parent precedes
+        // its children, so the reverse pass accumulates retained sizes
+        // bottom-up (each node's children have already added themselves).
         var retainedSize = new Dictionary<ulong, ulong>(order.Count + 1);
         var retainedCount = new Dictionary<ulong, long>(order.Count + 1);
         foreach (var address in order)
@@ -275,25 +268,29 @@ public sealed class DominatorTreeService : IDominatorTreeService
             return string.CompareOrdinal(left.TypeName, right.TypeName);
         });
 
-        var typeRetained = BuildTypeRetainedSizes(nodes, order, retainedSize, children);
+        var typeRetained = BuildTypeRetainedSizes(nodes, order, idom, retainedSize);
         var result = new DominatorAnalysisResult(dominators, typeRetained);
-        _cache[key] = result;
+        _cache.GetValue(snapshot, _ => result);
         ReportProgress(progress, 1.0);
         return result;
     }
 
     // Per-type retained size: the memory that would be freed if every reachable
     // instance of the type were collected. A naive sum of per-object retained
-    // sizes double-counts when an object dominates another object of the same
-    // type (e.g. an outer byte[][] dominating inner byte[]s), so each object
-    // contributes its retained size minus any same-type dominated subtree.
-    // Types whose objects are all garbage contribute 0 (nothing keeps them alive
-    // and they keep nothing alive).
+    // sizes double-counts nested same-type objects: if a Node dominates a Node[]
+    // that dominates another Node, the inner Node's subtree lies inside the
+    // outer Node's retained size too. Each object therefore contributes its
+    // retained size only when no same-type ancestor exists in the dominator
+    // tree — equivalently, an object's retained size covers all of its nearest
+    // same-type descendants (reached by traversing through different-type
+    // nodes, stopping beneath each same-type descendant), and those descendants
+    // are not counted again. Types whose objects are all garbage contribute 0
+    // (nothing keeps them alive and they keep nothing alive).
     private static IReadOnlyList<TypeRetainedSize> BuildTypeRetainedSizes(
         IReadOnlyDictionary<ulong, NodeData> nodes,
         IReadOnlyList<ulong> order,
-        IReadOnlyDictionary<ulong, ulong> retainedSize,
-        IReadOnlyDictionary<ulong, List<ulong>> children)
+        IReadOnlyDictionary<ulong, ulong> idom,
+        IReadOnlyDictionary<ulong, ulong> retainedSize)
     {
         var contribution = new Dictionary<ulong, ulong>();
         var typeNames = new Dictionary<ulong, string>();
@@ -303,22 +300,67 @@ public sealed class DominatorTreeService : IDominatorTreeService
             typeNames.TryAdd(node.MethodTable, node.TypeName);
         }
 
+        var children = new Dictionary<ulong, List<ulong>>();
         foreach (var address in order)
         {
-            var node = nodes[address];
-            var total = retainedSize[address];
-            if (children.TryGetValue(address, out var list))
+            var parent = idom[address];
+            if (!children.TryGetValue(parent, out var list))
+            {
+                children[parent] = list = [];
+            }
+
+            list.Add(address);
+        }
+
+        // One dominator-tree walk keeps the set of types on the current
+        // root-to-node path (maintained incrementally with enter/exit markers,
+        // so the whole pass is O(nodes)). A node whose type already appears on
+        // the path is nested beneath a same-type ancestor — possibly through
+        // different-type nodes, e.g. Node -> Node[] -> Node — and its retained
+        // size is already covered by that ancestor, so it contributes nothing.
+        var pathTypeCounts = new Dictionary<ulong, int>();
+        var stack = new Stack<(ulong Node, bool Exit)>();
+        if (children.TryGetValue(SyntheticRoot, out var rootChildren))
+        {
+            foreach (var child in rootChildren)
+            {
+                stack.Push((child, Exit: false));
+            }
+        }
+
+        while (stack.Count > 0)
+        {
+            var (node, exit) = stack.Pop();
+            if (exit)
+            {
+                var type = nodes[node].MethodTable;
+                if (pathTypeCounts[type] == 1)
+                {
+                    pathTypeCounts.Remove(type);
+                }
+                else
+                {
+                    pathTypeCounts[type]--;
+                }
+
+                continue;
+            }
+
+            var nodeType = nodes[node].MethodTable;
+            if (!pathTypeCounts.ContainsKey(nodeType))
+            {
+                contribution[nodeType] += retainedSize[node];
+            }
+
+            pathTypeCounts[nodeType] = pathTypeCounts.GetValueOrDefault(nodeType) + 1;
+            stack.Push((node, Exit: true));
+            if (children.TryGetValue(node, out var list))
             {
                 foreach (var child in list)
                 {
-                    if (nodes[child].MethodTable == node.MethodTable)
-                    {
-                        total -= retainedSize[child];
-                    }
+                    stack.Push((child, Exit: false));
                 }
             }
-
-            contribution[node.MethodTable] += total;
         }
 
         var types = new List<TypeRetainedSize>(contribution.Count);
@@ -427,6 +469,4 @@ public sealed class DominatorTreeService : IDominatorTreeService
     }
 
     private readonly record struct NodeData(ulong Size, string TypeName, ulong MethodTable);
-
-    private readonly record struct SnapshotKey(string Path, DateTimeOffset CapturedAt);
 }

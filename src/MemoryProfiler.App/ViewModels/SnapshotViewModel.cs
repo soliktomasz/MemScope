@@ -385,6 +385,23 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
                 OnPropertyChanged(nameof(RetainedSizeStatusText));
             }).ConfigureAwait(false);
             linked.Dispose();
+
+            // Release the cancellation source this computation created on every
+            // completion path; a superseding load may already have canceled and
+            // disposed it through CancelRetainedSizeLoad.
+            if (ReferenceEquals(_retainedSizeCancellation, cancellation))
+            {
+                _retainedSizeCancellation = null;
+            }
+
+            try
+            {
+                cancellation.Dispose();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Already released by CancelRetainedSizeLoad.
+            }
         }
     }
 

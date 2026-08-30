@@ -562,11 +562,29 @@ public sealed class SnapshotViewModelTests
         Assert.Equal(0.42, viewModel.RetainedSizeProgress, precision: 10);
         Assert.Contains("42%", viewModel.RetainedSizeStatusText);
 
+        // Await the fire-and-forget continuation's publish deterministically:
+        // subscribe to the state change before completing the gate, then wait
+        // for the completion source instead of sleeping.
+        var completed = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        viewModel.PropertyChanged += OnPropertyChanged;
         gate.SetResult(new DominatorAnalysisResult([], []));
-        await Task.Delay(50);
+        await completed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        viewModel.PropertyChanged -= OnPropertyChanged;
 
         Assert.False(viewModel.IsComputingRetainedSizes);
         Assert.False(viewModel.ShowRetainedSizeProgress);
+
+        void OnPropertyChanged(
+            object? sender,
+            System.ComponentModel.PropertyChangedEventArgs eventArgs)
+        {
+            if (eventArgs.PropertyName == nameof(SnapshotViewModel.IsComputingRetainedSizes) &&
+                !viewModel.IsComputingRetainedSizes)
+            {
+                completed.TrySetResult();
+            }
+        }
     }
 
     [Fact]
@@ -649,15 +667,19 @@ public sealed class SnapshotViewModelTests
             Assert.Single(viewModel.Types.FilteredTypes).RetainedSizeDisplay);
 
         // The stale computation finishing late must not overwrite the newer
-        // result.
+        // result. Await its completion, then prove the guard: a broken version
+        // check would publish the stale 999 almost immediately, so a bounded
+        // spin that never observes it confirms the result was dropped.
         gate.SetResult(new DominatorAnalysisResult(
             [],
             [new TypeRetainedSize(0x1000, "System.String", 999)]));
-        await Task.Delay(50);
+        await gate.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        Assert.Equal(
-            FormatBytes(500),
-            Assert.Single(viewModel.Types.FilteredTypes).RetainedSizeDisplay);
+        var row = viewModel.Types.FilteredTypes.Single();
+        Assert.False(SpinWait.SpinUntil(
+            () => row.RetainedSize == 999,
+            TimeSpan.FromSeconds(1)));
+        Assert.Equal(FormatBytes(500), row.RetainedSizeDisplay);
     }
 
     private static string FormatBytes(ulong value)
