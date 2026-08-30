@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using MemoryProfiler.Analysis.Dominators;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
@@ -35,7 +36,8 @@ public partial class App : Application
                 dumpFilePicker,
                 new ClrMdHeapObjectRepository(),
                 new ClrMdObjectReferenceService(),
-                new GcRootService());
+                new GcRootService(),
+                new DominatorTreeService());
             mainWindow = new MainWindow(viewModel);
             desktop.MainWindow = mainWindow;
         }

@@ -1,4 +1,5 @@
 using System.Globalization;
+using MemoryProfiler.Analysis.Dominators;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
@@ -509,6 +510,178 @@ public sealed class SnapshotViewModelTests
         Assert.Empty(viewModel.ObjectReferences.References);
     }
 
+    [Fact]
+    public async Task LoadComputesRetainedSizesAndFillsTheTypeBrowser()
+    {
+        var dominatorService = new StubDominatorService(
+            new DominatorAnalysisResult(
+                [],
+                [new TypeRetainedSize(0x1000, "System.String", 44_200_000)]));
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(
+                Snapshot(Type("System.String", "System.Private.CoreLib", 381_235, 44_200_000))),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            ImmediateUiDispatcher.Instance,
+            dominatorService: dominatorService);
+
+        await viewModel.LoadAsync("sample.dmp");
+
+        Assert.False(viewModel.IsComputingRetainedSizes);
+        Assert.False(viewModel.HasRetainedSizeError);
+        Assert.False(viewModel.ShowRetainedSizeProgress);
+        var row = Assert.Single(viewModel.Types.FilteredTypes);
+        Assert.True(row.IsRetainedSizeAvailable);
+        Assert.Equal(FormatBytes(44_200_000), row.RetainedSizeDisplay);
+    }
+
+    [Fact]
+    public async Task RetainedSizeComputationPublishesProgressWhileRunning()
+    {
+        var gate = new TaskCompletionSource<DominatorAnalysisResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var dominatorService = new StubDominatorService(async (progress, _) =>
+        {
+            progress?.Report(0.42);
+            return await gate.Task;
+        });
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(
+                Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            ImmediateUiDispatcher.Instance,
+            dominatorService: dominatorService);
+
+        await viewModel.LoadAsync("sample.dmp");
+
+        Assert.True(viewModel.IsComputingRetainedSizes);
+        Assert.True(viewModel.ShowRetainedSizeProgress);
+        Assert.Equal(0.42, viewModel.RetainedSizeProgress, precision: 10);
+        Assert.Contains("42%", viewModel.RetainedSizeStatusText);
+
+        // Await the fire-and-forget continuation's publish deterministically:
+        // subscribe to the state change before completing the gate, then wait
+        // for the completion source instead of sleeping.
+        var completed = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        viewModel.PropertyChanged += OnPropertyChanged;
+        gate.SetResult(new DominatorAnalysisResult([], []));
+        await completed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        viewModel.PropertyChanged -= OnPropertyChanged;
+
+        Assert.False(viewModel.IsComputingRetainedSizes);
+        Assert.False(viewModel.ShowRetainedSizeProgress);
+
+        void OnPropertyChanged(
+            object? sender,
+            System.ComponentModel.PropertyChangedEventArgs eventArgs)
+        {
+            if (eventArgs.PropertyName == nameof(SnapshotViewModel.IsComputingRetainedSizes) &&
+                !viewModel.IsComputingRetainedSizes)
+            {
+                completed.TrySetResult();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task RetainedSizeComputationFailureIsNonFatal()
+    {
+        var dominatorService = new StubDominatorService(
+            (_, _) => Task.FromException<DominatorAnalysisResult>(
+                new InvalidDataException("The dump has no CLR runtime.")));
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(
+                Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            ImmediateUiDispatcher.Instance,
+            dominatorService: dominatorService);
+
+        await viewModel.LoadAsync("sample.dmp");
+
+        Assert.True(viewModel.HasSnapshot);
+        Assert.True(viewModel.IsReady);
+        Assert.True(viewModel.ShowTable);
+        Assert.True(viewModel.HasRetainedSizeError);
+        Assert.True(viewModel.ShowRetainedSizeProgress);
+        Assert.StartsWith("Retained sizes unavailable.", viewModel.RetainedSizeStatusText);
+        Assert.True(Assert.Single(viewModel.Types.FilteredTypes).IsRetainedSizeUnavailable);
+    }
+
+    [Fact]
+    public async Task LoadWithoutDominatorServiceLeavesRetainedSizesUnavailable()
+    {
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(
+                Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            ImmediateUiDispatcher.Instance);
+
+        await viewModel.LoadAsync("sample.dmp");
+
+        Assert.False(viewModel.IsComputingRetainedSizes);
+        Assert.False(viewModel.HasRetainedSizeError);
+        Assert.True(Assert.Single(viewModel.Types.FilteredTypes).IsRetainedSizeUnavailable);
+    }
+
+    [Fact]
+    public async Task LoadingANewSnapshotDropsTheStaleRetainedSizeResult()
+    {
+        var gate = new TaskCompletionSource<DominatorAnalysisResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+        var dominatorService = new StubDominatorService((_, _) =>
+        {
+            calls++;
+            return calls == 1
+                ? gate.Task
+                : Task.FromResult(new DominatorAnalysisResult(
+                    [],
+                    [new TypeRetainedSize(0x1000, "System.String", 500)]));
+        });
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(
+                Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            ImmediateUiDispatcher.Instance,
+            dominatorService: dominatorService);
+
+        await viewModel.LoadAsync("sample.dmp");
+        Assert.True(viewModel.IsComputingRetainedSizes);
+
+        // The second load supersedes the first computation and publishes its
+        // own result.
+        await viewModel.LoadAsync("sample.dmp");
+        Assert.False(viewModel.IsComputingRetainedSizes);
+        Assert.Equal(
+            FormatBytes(500),
+            Assert.Single(viewModel.Types.FilteredTypes).RetainedSizeDisplay);
+
+        // The stale computation finishing late must not overwrite the newer
+        // result. Await its completion, then prove the guard: a broken version
+        // check would publish the stale 999 almost immediately, so a bounded
+        // spin that never observes it confirms the result was dropped.
+        gate.SetResult(new DominatorAnalysisResult(
+            [],
+            [new TypeRetainedSize(0x1000, "System.String", 999)]));
+        await gate.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var row = viewModel.Types.FilteredTypes.Single();
+        Assert.False(SpinWait.SpinUntil(
+            () => row.RetainedSize == 999,
+            TimeSpan.FromSeconds(1)));
+        Assert.Equal(FormatBytes(500), row.RetainedSizeDisplay);
+    }
+
     private static string FormatBytes(ulong value)
     {
         string[] units = ["B", "KB", "MB", "GB", "TB"];
@@ -618,5 +791,30 @@ public sealed class SnapshotViewModelTests
             ulong objectAddress,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(roots);
+    }
+
+    private sealed class StubDominatorService : IDominatorTreeService
+    {
+        private readonly Func<
+            IProgress<double>?,
+            CancellationToken,
+            Task<DominatorAnalysisResult>> _compute;
+
+        public StubDominatorService(DominatorAnalysisResult result)
+            : this((_, _) => Task.FromResult(result))
+        {
+        }
+
+        public StubDominatorService(
+            Func<IProgress<double>?, CancellationToken, Task<DominatorAnalysisResult>> compute)
+        {
+            _compute = compute;
+        }
+
+        public Task<DominatorAnalysisResult> ComputeDominatorsAsync(
+            HeapSnapshot snapshot,
+            IProgress<double>? progress = null,
+            CancellationToken cancellationToken = default) =>
+            _compute(progress, cancellationToken);
     }
 }

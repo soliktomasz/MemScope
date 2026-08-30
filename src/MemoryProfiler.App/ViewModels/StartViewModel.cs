@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Windows.Input;
+using MemoryProfiler.Analysis.Dominators;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
@@ -20,6 +21,7 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
     private readonly IHeapObjectRepository? _objectRepository;
     private readonly IObjectReferenceService? _referenceService;
     private readonly IGcRootService? _gcRootService;
+    private readonly IDominatorTreeService? _dominatorService;
     private readonly IDumpFilePicker? _dumpFilePicker;
     private readonly AsyncCommand _attachToProcessCommand;
     private readonly AsyncCommand _attachSelectedProcessCommand;
@@ -73,7 +75,8 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         IDumpFilePicker? dumpFilePicker,
         IHeapObjectRepository? objectRepository = null,
         IObjectReferenceService? referenceService = null,
-        IGcRootService? gcRootService = null)
+        IGcRootService? gcRootService = null,
+        IDominatorTreeService? dominatorService = null)
     {
         ArgumentNullException.ThrowIfNull(processPicker);
         ArgumentNullException.ThrowIfNull(sessionFactory);
@@ -88,6 +91,7 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         _objectRepository = objectRepository;
         _referenceService = referenceService;
         _gcRootService = gcRootService;
+        _dominatorService = dominatorService;
         _attachToProcessCommand = new AsyncCommand(ShowProcessPickerAsync);
         _attachSelectedProcessCommand = new AsyncCommand(
             StartLiveSessionAsync,
@@ -99,7 +103,8 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
                   _snapshotLoader is not null &&
                   _objectRepository is not null &&
                   _referenceService is not null &&
-                  _gcRootService is not null);
+                  _gcRootService is not null &&
+                  _dominatorService is not null);
         ProcessPicker.PropertyChanged += OnProcessPickerPropertyChanged;
     }
 
@@ -282,7 +287,8 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
             _referenceService,
             _gcRootService,
             _uiDispatcher,
-            CloseSnapshotAsync);
+            CloseSnapshotAsync,
+            _dominatorService);
         Snapshot = snapshot;
         await snapshot.LoadAsync(path);
     }

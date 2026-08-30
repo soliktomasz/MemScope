@@ -29,6 +29,8 @@ public sealed class ContractSerializationTests
             ]),
         new HeapSnapshotInfo("/tmp/example.dmp", "WorkerService", 42, "10.0.0",
             new DateTimeOffset(2026, 8, 28, 12, 0, 0, TimeSpan.Zero), 100, 8_192),
+        new DominatorInfo(0x5000, "Example.GlobalCache", 4_096, 440_401_920, 12_345),
+        new TypeRetainedSize(0x1000, "Example.GlobalCache", 440_401_920),
         new MemoryMetrics(new DateTimeOffset(2026, 8, 28, 12, 0, 1, TimeSpan.Zero),
             8_192, 1_024, 2_048, 3_072, 4_096, 512, 128.5, 1, 2, 3, 512),
         new GcEvent(new DateTimeOffset(2026, 8, 28, 12, 0, 2, TimeSpan.Zero),
