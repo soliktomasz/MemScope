@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Globalization;
+using MemoryProfiler.Analysis.Dominators;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
@@ -13,6 +14,7 @@ namespace MemoryProfiler.App.ViewModels;
 public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
 {
     private readonly IHeapSnapshotLoader _loader;
+    private readonly IDominatorTreeService? _dominatorService;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly CancellationTokenSource _loadCancellation = new();
     private readonly AsyncCommand _closeCommand;
@@ -22,6 +24,11 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
     private HeapSnapshot? _snapshot;
     private string? _errorMessage;
     private bool _isLoading;
+    private CancellationTokenSource? _retainedSizeCancellation;
+    private int _retainedSizeVersion;
+    private bool _isComputingRetainedSizes;
+    private double _retainedSizeProgress;
+    private string _retainedSizeStatusText = string.Empty;
     private int _disposed;
 
     internal SnapshotViewModel(
@@ -30,7 +37,8 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         IObjectReferenceService referenceService,
         IGcRootService gcRootService,
         IUiDispatcher uiDispatcher,
-        Func<Task>? close = null)
+        Func<Task>? close = null,
+        IDominatorTreeService? dominatorService = null)
     {
         ArgumentNullException.ThrowIfNull(loader);
         ArgumentNullException.ThrowIfNull(objectRepository);
@@ -38,6 +46,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         ArgumentNullException.ThrowIfNull(gcRootService);
         ArgumentNullException.ThrowIfNull(uiDispatcher);
         _loader = loader;
+        _dominatorService = dominatorService;
         _uiDispatcher = uiDispatcher;
         _closeCommand = new AsyncCommand(close ?? (() => Task.CompletedTask));
         _showOutgoingReferencesCommand = new RelayCommand<object>(
@@ -105,6 +114,30 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
 
     public bool ShowTable => IsReady && Types.HasFilteredTypes;
 
+    public bool IsComputingRetainedSizes => _isComputingRetainedSizes;
+
+    public double RetainedSizeProgress => _retainedSizeProgress;
+
+    public bool HasRetainedSizeError =>
+        !_isComputingRetainedSizes && !string.IsNullOrEmpty(_retainedSizeStatusText);
+
+    public bool ShowRetainedSizeProgress =>
+        IsComputingRetainedSizes || HasRetainedSizeError;
+
+    public string RetainedSizeStatusText
+    {
+        get
+        {
+            if (_isComputingRetainedSizes)
+            {
+                var percent = (int)Math.Round(_retainedSizeProgress * 100);
+                return $"Computing retained sizes... {percent.ToString("N0", CultureInfo.CurrentCulture)}%";
+            }
+
+            return _retainedSizeStatusText;
+        }
+    }
+
     public string ProcessDescription
     {
         get
@@ -153,10 +186,24 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
             cancellationToken,
             _loadCancellation.Token);
 
+        // A new snapshot supersedes any in-flight retained-size computation:
+        // cancel it up front (a version bump below keeps a stale result from
+        // ever publishing) and clear the previous progress state.
+        CancelRetainedSizeLoad();
+        Interlocked.Increment(ref _retainedSizeVersion);
+
         await PublishAsync(() =>
         {
             _snapshot = null;
             SetError(null);
+            _retainedSizeProgress = 0;
+            _retainedSizeStatusText = string.Empty;
+            _isComputingRetainedSizes = false;
+            OnPropertyChanged(nameof(RetainedSizeProgress));
+            OnPropertyChanged(nameof(RetainedSizeStatusText));
+            OnPropertyChanged(nameof(IsComputingRetainedSizes));
+            OnPropertyChanged(nameof(ShowRetainedSizeProgress));
+            OnPropertyChanged(nameof(HasRetainedSizeError));
             OnPropertyChanged(nameof(HasSnapshot));
             IsLoading = true;
             NotifyDisplayStateChanged();
@@ -183,6 +230,14 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
                 OnPropertyChanged(nameof(SourcePath));
                 NotifyDisplayStateChanged();
             }).ConfigureAwait(false);
+
+            // Retained sizes are computed in the background off the UI thread:
+            // the type browser stays usable immediately and its Retained Size
+            // column fills in as the dominator analysis progresses.
+            if (_dominatorService is not null)
+            {
+                _ = ComputeRetainedSizesAsync(snapshot);
+            }
         }
         catch (OperationCanceledException) when (linked.Token.IsCancellationRequested)
         {
@@ -215,6 +270,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
             // Nothing to cancel.
         }
 
+        CancelRetainedSizeLoad();
         _loadCancellation.Dispose();
         return DisposeChildrenAsync();
     }
@@ -234,6 +290,138 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         }
 
         NotifyDisplayStateChanged();
+    }
+
+    // Runs the dominator analysis in the background after a snapshot loads,
+    // publishes progress through the UI dispatcher, and fills the type
+    // browser's Retained Size column on completion. A version counter plus
+    // cancellation guarantee a superseded computation never publishes.
+    private async Task ComputeRetainedSizesAsync(HeapSnapshot snapshot)
+    {
+        var version = Interlocked.Increment(ref _retainedSizeVersion);
+        var cancellation = new CancellationTokenSource();
+        _retainedSizeCancellation = cancellation;
+        var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellation.Token,
+            _loadCancellation.Token);
+        var token = linked.Token;
+        try
+        {
+            await PublishAsync(() =>
+            {
+                if (version != Volatile.Read(ref _retainedSizeVersion))
+                {
+                    return;
+                }
+
+                _retainedSizeProgress = 0;
+                _retainedSizeStatusText = string.Empty;
+                _isComputingRetainedSizes = true;
+                OnPropertyChanged(nameof(RetainedSizeProgress));
+                OnPropertyChanged(nameof(RetainedSizeStatusText));
+                OnPropertyChanged(nameof(IsComputingRetainedSizes));
+                OnPropertyChanged(nameof(ShowRetainedSizeProgress));
+                OnPropertyChanged(nameof(HasRetainedSizeError));
+            }).ConfigureAwait(false);
+
+            var result = await _dominatorService!
+                .ComputeDominatorsAsync(
+                    snapshot,
+                    new DominatorProgress(value => PublishRetainedSizeProgress(version, value)),
+                    token)
+                .ConfigureAwait(false);
+
+            await PublishAsync(() =>
+            {
+                if (version != Volatile.Read(ref _retainedSizeVersion))
+                {
+                    return;
+                }
+
+                Types.SetRetainedSizes(result.TypeRetainedSizes);
+                _retainedSizeStatusText = string.Empty;
+                _isComputingRetainedSizes = false;
+                OnPropertyChanged(nameof(RetainedSizeStatusText));
+                OnPropertyChanged(nameof(IsComputingRetainedSizes));
+                OnPropertyChanged(nameof(ShowRetainedSizeProgress));
+                OnPropertyChanged(nameof(HasRetainedSizeError));
+            }).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            // A new snapshot or snapshot closure superseded the computation.
+        }
+        catch (Exception exception)
+        {
+            await PublishAsync(() =>
+            {
+                if (version != Volatile.Read(ref _retainedSizeVersion))
+                {
+                    return;
+                }
+
+                // The failure is non-fatal: the snapshot and type browser stay
+                // fully usable, only the retained column stays unavailable.
+                _retainedSizeStatusText = $"Retained sizes unavailable. {exception.Message}";
+                _isComputingRetainedSizes = false;
+                OnPropertyChanged(nameof(RetainedSizeStatusText));
+                OnPropertyChanged(nameof(IsComputingRetainedSizes));
+                OnPropertyChanged(nameof(ShowRetainedSizeProgress));
+                OnPropertyChanged(nameof(HasRetainedSizeError));
+            }).ConfigureAwait(false);
+        }
+        finally
+        {
+            await PublishAsync(() =>
+            {
+                if (version != Volatile.Read(ref _retainedSizeVersion))
+                {
+                    return;
+                }
+
+                _isComputingRetainedSizes = false;
+                OnPropertyChanged(nameof(IsComputingRetainedSizes));
+                OnPropertyChanged(nameof(ShowRetainedSizeProgress));
+                OnPropertyChanged(nameof(RetainedSizeStatusText));
+            }).ConfigureAwait(false);
+            linked.Dispose();
+        }
+    }
+
+    private void PublishRetainedSizeProgress(int version, double value)
+    {
+        _ = PublishAsync(() =>
+        {
+            if (version != Volatile.Read(ref _retainedSizeVersion))
+            {
+                return;
+            }
+
+            _retainedSizeProgress = value;
+            OnPropertyChanged(nameof(RetainedSizeProgress));
+            OnPropertyChanged(nameof(RetainedSizeStatusText));
+        });
+    }
+
+    private void CancelRetainedSizeLoad()
+    {
+        var cancellation = _retainedSizeCancellation;
+        _retainedSizeCancellation = null;
+        if (cancellation is null)
+        {
+            return;
+        }
+
+        try
+        {
+            cancellation.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The token source was already released.
+        }
+
+        cancellation.Dispose();
     }
 
     private async Task RefreshInstancesAsync()
@@ -397,5 +585,13 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         OnPropertyChanged(nameof(ShowEmpty));
         OnPropertyChanged(nameof(ShowNoFilteredTypes));
         OnPropertyChanged(nameof(ShowTable));
+    }
+
+    // Reports service progress on the background thread; the callback routes
+    // through the dispatcher and the load version, so stale progress can never
+    // surface after a superseded computation.
+    private sealed class DominatorProgress(Action<double> report) : IProgress<double>
+    {
+        public void Report(double value) => report(value);
     }
 }

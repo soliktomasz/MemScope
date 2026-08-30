@@ -179,6 +179,29 @@ public sealed class TypeBrowserViewModel : ViewModelBase
         NotifySourceChanged();
     }
 
+    // Fills in the retained sizes computed by the dominator analysis without
+    // disturbing the search, assembly, or minimum-size filters or the current
+    // selection: the type rows are updated in place and re-sorted only.
+    public void SetRetainedSizes(IReadOnlyList<TypeRetainedSize> retainedSizes)
+    {
+        ArgumentNullException.ThrowIfNull(retainedSizes);
+        var byMethodTable = new Dictionary<ulong, ulong>(retainedSizes.Count);
+        foreach (var retained in retainedSizes)
+        {
+            byMethodTable[retained.MethodTable] = retained.RetainedSize;
+        }
+
+        foreach (var row in _types)
+        {
+            if (byMethodTable.TryGetValue(row.MethodTable, out var retainedSize))
+            {
+                row.SetRetainedSize(retainedSize);
+            }
+        }
+
+        Rebuild();
+    }
+
     public void SortBy(TypeSortColumn column)
     {
         if (!CanSort())
@@ -293,12 +316,12 @@ public sealed class TypeBrowserViewModel : ViewModelBase
                     .ThenBy(row => row.TypeName, StringComparer.OrdinalIgnoreCase),
             TypeSortColumn.RetainedSize => ascending
                 ? rows
-                    .OrderBy(row => row.Type.RetainedSize is null)
-                    .ThenBy(row => row.Type.RetainedSize)
+                    .OrderBy(row => row.RetainedSize is null)
+                    .ThenBy(row => row.RetainedSize)
                     .ThenBy(row => row.TypeName, StringComparer.OrdinalIgnoreCase)
                 : rows
-                    .OrderBy(row => row.Type.RetainedSize is null)
-                    .ThenByDescending(row => row.Type.RetainedSize)
+                    .OrderBy(row => row.RetainedSize is null)
+                    .ThenByDescending(row => row.RetainedSize)
                     .ThenBy(row => row.TypeName, StringComparer.OrdinalIgnoreCase),
             _ => throw new ArgumentOutOfRangeException(nameof(_sortColumn))
         };

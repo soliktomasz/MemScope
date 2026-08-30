@@ -1,5 +1,6 @@
 using System.Collections.Specialized;
 using System.Runtime.CompilerServices;
+using MemoryProfiler.Analysis.Dominators;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
@@ -361,6 +362,43 @@ public sealed class StartViewModelTests
             new StubObjectReferenceService([]));
 
         Assert.False(start.OpenDumpCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task OpenDumpIsDisabledWithoutTheDominatorService()
+    {
+        using var start = new StartViewModel(
+            new ProcessPickerViewModel(StubDiscovery.Returning()),
+            new StubLiveSessionFactory(new StubLiveSession()),
+            ImmediateUiDispatcher.Instance,
+            new RecordingDumpCaptureService(),
+            new StubDumpDestinationPicker(Path.GetTempPath()),
+            new StubHeapSnapshotLoader(SampleSnapshot()),
+            new StubDumpFilePicker("/tmp/sample.dmp"),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]));
+
+        Assert.False(start.OpenDumpCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task OpenDumpIsEnabledWhenTheDominatorServiceIsSupplied()
+    {
+        using var start = new StartViewModel(
+            new ProcessPickerViewModel(StubDiscovery.Returning()),
+            new StubLiveSessionFactory(new StubLiveSession()),
+            ImmediateUiDispatcher.Instance,
+            new RecordingDumpCaptureService(),
+            new StubDumpDestinationPicker(Path.GetTempPath()),
+            new StubHeapSnapshotLoader(SampleSnapshot()),
+            new StubDumpFilePicker("/tmp/sample.dmp"),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            new StubDominatorService(new DominatorAnalysisResult([], [])));
+
+        Assert.True(start.OpenDumpCommand.CanExecute(null));
     }
 
     [Fact]
@@ -737,5 +775,15 @@ public sealed class StartViewModelTests
             ulong objectAddress,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(roots);
+    }
+
+    private sealed class StubDominatorService(DominatorAnalysisResult result)
+        : IDominatorTreeService
+    {
+        public Task<DominatorAnalysisResult> ComputeDominatorsAsync(
+            HeapSnapshot snapshot,
+            IProgress<double>? progress = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(result);
     }
 }

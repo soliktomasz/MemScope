@@ -372,6 +372,34 @@
               </DataTemplate>
             </ListBox.ItemTemplate>
           </ListBox>
+
+          <StackPanel IsVisible="{Binding ShowRetainedSizeProgress}"
+                      Margin="10,6,10,0"
+                      VerticalAlignment="Top"
+                      Spacing="6">
+            <ProgressBar Height="2"
+                         Minimum="0"
+                         Maximum="1"
+                         IsVisible="{Binding IsComputingRetainedSizes}"
+                         Value="{Binding RetainedSizeProgress}"
+                         AutomationProperties.Name="Computing retained sizes"
+                         AutomationProperties.LiveSetting="Polite" />
+            <TextBlock IsVisible="{Binding IsComputingRetainedSizes}"
+                       Classes="secondary"
+                       FontSize="12"
+                       Text="{Binding RetainedSizeStatusText}" />
+            <Border IsVisible="{Binding HasRetainedSizeError}"
+                    Padding="12,9"
+                    CornerRadius="{DynamicResource AppCornerRadius}"
+                    AutomationProperties.Name="{Binding RetainedSizeStatusText}"
+                    AutomationProperties.LiveSetting="Assertive"
+                    Background="{DynamicResource AppErrorSurfaceBrush}">
+              <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
+                         FontSize="13"
+                         TextWrapping="Wrap"
+                         Text="{Binding RetainedSizeStatusText}" />
+            </Border>
+          </StackPanel>
         </Grid>
       </Grid>
 

@@ -257,6 +257,66 @@ public sealed class TypeBrowserViewModelTests
         Assert.Equal(FormatBytes(440_401_920), row.RetainedSizeDisplay);
     }
 
+    [Fact]
+    public void SetRetainedSizesFillsRowsInPlaceWithoutResettingFilters()
+    {
+        var browser = new TypeBrowserViewModel();
+        browser.SetTypes(SampleTypes);
+        browser.SearchText = "MyCompany";
+        browser.SortBy(TypeSortColumn.ObjectCount);
+
+        browser.SetRetainedSizes(
+        [
+            new TypeRetainedSize(0x1000, "System.String", 44_200_000),
+            new TypeRetainedSize(0x2000, "System.Byte[]", 91_800_000),
+            new TypeRetainedSize(0x3000, "MyCompany.Cache.CacheEntry", 118_400_000),
+            new TypeRetainedSize(0x4000, "MyCompany.Cache.Index", 1_500_000),
+            new TypeRetainedSize(0x5000, "MyCompany.Core.Session", 96_000),
+        ]);
+
+        Assert.Equal("MyCompany", browser.SearchText);
+        Assert.Equal(TypeSortColumn.ObjectCount, browser.SortColumn);
+        var row = browser.FilteredTypes.Single(type => type.TypeName == "MyCompany.Cache.CacheEntry");
+        Assert.True(row.IsRetainedSizeAvailable);
+        Assert.Equal(FormatBytes(118_400_000), row.RetainedSizeDisplay);
+    }
+
+    [Fact]
+    public void SetRetainedSizesReordersAnActiveRetainedSizeSort()
+    {
+        var browser = new TypeBrowserViewModel();
+        browser.SetTypes(
+        [
+            Type(0x1, "Large", "A", 1, 10, null),
+            Type(0x2, "Small", "A", 1, 10, null),
+        ]);
+        browser.SortBy(TypeSortColumn.RetainedSize);
+        browser.SortBy(TypeSortColumn.RetainedSize);
+        Assert.Equal(TypeSortDirection.Descending, browser.SortDirection);
+        Assert.Equal(["Large", "Small"], browser.FilteredTypes.Select(row => row.TypeName));
+
+        browser.SetRetainedSizes(
+        [
+            new TypeRetainedSize(0x1, "Large", 500),
+            new TypeRetainedSize(0x2, "Small", 5_000),
+        ]);
+
+        Assert.Equal(["Small", "Large"], browser.FilteredTypes.Select(row => row.TypeName));
+    }
+
+    [Fact]
+    public void SetRetainedSizesLeavesTypesWithoutResultsUnavailable()
+    {
+        var browser = new TypeBrowserViewModel();
+        browser.SetTypes([Type(0x1, "Known", "A", 1, 10)]);
+
+        browser.SetRetainedSizes([new TypeRetainedSize(0x9999, "Other", 100)]);
+
+        var row = Assert.Single(browser.FilteredTypes);
+        Assert.True(row.IsRetainedSizeUnavailable);
+        Assert.Equal("N/A", row.RetainedSizeDisplay);
+    }
+
     private static string FormatBytes(ulong value)
     {
         string[] units = ["B", "KB", "MB", "GB", "TB"];
