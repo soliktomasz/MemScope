@@ -289,6 +289,12 @@ public sealed class ComparisonTableViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasDeltas));
         OnPropertyChanged(nameof(HasNoDeltas));
         OnPropertyChanged(nameof(ShownSummary));
+        // The sort commands gate on HasDeltas, so a source replacement must
+        // re-query their CanExecute state.
+        _sortByTypeNameCommand.NotifyCanExecuteChanged();
+        _sortByCountDeltaCommand.NotifyCanExecuteChanged();
+        _sortBySizeDeltaCommand.NotifyCanExecuteChanged();
+        _sortByRetainedDeltaCommand.NotifyCanExecuteChanged();
         NotifySortChanged();
     }
 

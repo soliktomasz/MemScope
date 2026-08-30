@@ -15,22 +15,18 @@ public sealed class SnapshotComparisonService : ISnapshotComparisonService
         // Types are keyed by name: a type present in only one snapshot
         // contributes zero counts/sizes for the missing side, so new types
         // surface as positive deltas and disappeared types as negative ones.
+        // A name may appear more than once per snapshot (the same type name
+        // from different method tables or assemblies), so every entry is
+        // aggregated into its row rather than overwriting the previous one.
         var merged = new Dictionary<string, DeltaAccumulator>(StringComparer.Ordinal);
         foreach (var type in before.Types)
         {
-            merged[type.Name] = new DeltaAccumulator(type, isBefore: true);
+            GetOrAdd(merged, type.Name).Add(type, isBefore: true);
         }
 
         foreach (var type in after.Types)
         {
-            if (merged.TryGetValue(type.Name, out var accumulator))
-            {
-                accumulator.AddAfter(type);
-            }
-            else
-            {
-                merged[type.Name] = new DeltaAccumulator(type, isBefore: false);
-            }
+            GetOrAdd(merged, type.Name).Add(type, isBefore: false);
         }
 
         var deltas = new List<TypeMemoryDelta>(merged.Count);
@@ -60,6 +56,18 @@ public sealed class SnapshotComparisonService : ISnapshotComparisonService
         return new SnapshotComparison(deltas);
     }
 
+    private static DeltaAccumulator GetOrAdd(
+        Dictionary<string, DeltaAccumulator> merged,
+        string typeName)
+    {
+        if (!merged.TryGetValue(typeName, out var accumulator))
+        {
+            merged[typeName] = accumulator = new DeltaAccumulator(typeName);
+        }
+
+        return accumulator;
+    }
+
     private sealed class DeltaAccumulator
     {
         private readonly string _typeName;
@@ -68,26 +76,34 @@ public sealed class SnapshotComparisonService : ISnapshotComparisonService
         private long _sizeBefore;
         private long _sizeAfter;
         private ulong? _retainedBefore;
+        private bool _hasRetainedBefore;
         private ulong? _retainedAfter;
+        private bool _hasRetainedAfter;
 
-        public DeltaAccumulator(HeapTypeInfo type, bool isBefore)
+        public DeltaAccumulator(string typeName) => _typeName = typeName;
+
+        public void Add(HeapTypeInfo type, bool isBefore)
         {
-            _typeName = type.Name;
             if (isBefore)
             {
-                AddBefore(type);
+                checked
+                {
+                    _countBefore += type.ObjectCount;
+                }
+
+                _sizeBefore = AddSizes(_sizeBefore, type.ShallowSize);
+                AddRetained(isBefore: true, type.RetainedSize);
             }
             else
             {
-                AddAfter(type);
-            }
-        }
+                checked
+                {
+                    _countAfter += type.ObjectCount;
+                }
 
-        public void AddAfter(HeapTypeInfo type)
-        {
-            _countAfter = type.ObjectCount;
-            _sizeAfter = ToLong(type.ShallowSize);
-            _retainedAfter = type.RetainedSize;
+                _sizeAfter = AddSizes(_sizeAfter, type.ShallowSize);
+                AddRetained(isBefore: false, type.RetainedSize);
+            }
         }
 
         public TypeMemoryDelta ToDelta()
@@ -106,12 +122,46 @@ public sealed class SnapshotComparisonService : ISnapshotComparisonService
             }
         }
 
-        private void AddBefore(HeapTypeInfo type)
+        // Sizes accumulate only forward from 0 (never negative), so the sum is
+        // exact in ulong space and saturates at long.MaxValue instead of
+        // wrapping or throwing.
+        private static long AddSizes(long current, ulong additional)
         {
-            _countBefore = type.ObjectCount;
-            _sizeBefore = ToLong(type.ShallowSize);
-            _retainedBefore = type.RetainedSize;
+            var room = (ulong)long.MaxValue - (ulong)current;
+            return additional >= room ? long.MaxValue : (long)((ulong)current + additional);
         }
+
+        private void AddRetained(bool isBefore, ulong? retained)
+        {
+            if (isBefore)
+            {
+                if (_hasRetainedBefore)
+                {
+                    _retainedBefore = CombineRetained(_retainedBefore, retained);
+                }
+                else
+                {
+                    _retainedBefore = retained;
+                    _hasRetainedBefore = true;
+                }
+            }
+            else if (_hasRetainedAfter)
+            {
+                _retainedAfter = CombineRetained(_retainedAfter, retained);
+            }
+            else
+            {
+                _retainedAfter = retained;
+                _hasRetainedAfter = true;
+            }
+        }
+
+        // Retained sizes combine only when every contributing entry carries
+        // one; a missing value on either side keeps the delta unavailable.
+        private static ulong? CombineRetained(ulong? current, ulong? additional) =>
+            current is null || additional is null
+                ? null
+                : checked(current.Value + additional.Value);
 
         // Retained sizes are optional: the delta is meaningful only when both
         // sides carry them (the dominator analysis produced them for both).
@@ -133,8 +183,5 @@ public sealed class SnapshotComparisonService : ISnapshotComparisonService
             var shrink = before.Value - after.Value;
             return shrink > (ulong)long.MaxValue ? long.MinValue : -(long)shrink;
         }
-
-        private static long ToLong(ulong value) =>
-            value > (ulong)long.MaxValue ? long.MaxValue : (long)value;
     }
 }

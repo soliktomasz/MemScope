@@ -23,8 +23,9 @@ public sealed class SnapshotComparisonServiceTests
         string name,
         long count,
         ulong size,
-        ulong? retainedSize = null) =>
-        new(0x1000, name, "Sample", count, size, retainedSize);
+        ulong? retainedSize = null,
+        ulong methodTable = 0x1000) =>
+        new(methodTable, name, "Sample", count, size, retainedSize);
 
     [Fact]
     public void ComputesCountAndSizeDeltasForSharedTypes()
@@ -208,5 +209,48 @@ public sealed class SnapshotComparisonServiceTests
             result.Deltas,
             delta => Assert.Equal("myapp.widget", delta.TypeName),
             delta => Assert.Equal("MyApp.Widget", delta.TypeName));
+    }
+
+    [Fact]
+    public void DuplicateTypeNamesAcrossMethodTablesAreAggregatedNotOverwritten()
+    {
+        // The same type name can come from several method tables (e.g. the same
+        // name forwarded across assemblies): every entry must contribute to the
+        // single row instead of overwriting the previous one.
+        var before = Snapshot(
+            Type("MyApp.Widget", 10, 1_000, retainedSize: 5_000, methodTable: 0x100),
+            Type("MyApp.Widget", 20, 2_000, retainedSize: 8_000, methodTable: 0x101));
+        var after = Snapshot(
+            Type("MyApp.Widget", 30, 3_000, retainedSize: 9_000, methodTable: 0x100),
+            Type("MyApp.Widget", 40, 4_000, retainedSize: 12_000, methodTable: 0x101));
+
+        var result = new SnapshotComparisonService().Compare(before, after);
+
+        var widget = Assert.Single(result.Deltas);
+        Assert.Equal("MyApp.Widget", widget.TypeName);
+        Assert.Equal(30, widget.CountBefore); // 10 + 20.
+        Assert.Equal(70, widget.CountAfter); // 30 + 40.
+        Assert.Equal(40, widget.CountDelta);
+        Assert.Equal(3_000, widget.SizeBefore); // 1_000 + 2_000.
+        Assert.Equal(7_000, widget.SizeAfter); // 3_000 + 4_000.
+        Assert.Equal(4_000, widget.SizeDelta);
+        Assert.Equal(8_000, widget.RetainedSizeDelta); // (9_000 + 12_000) - (5_000 + 8_000).
+    }
+
+    [Fact]
+    public void DuplicateNameWithPartiallyMissingRetainedSizesYieldsNullRetainedDelta()
+    {
+        var before = Snapshot(
+            Type("MyApp.Widget", 10, 1_000, retainedSize: 5_000, methodTable: 0x100),
+            Type("MyApp.Widget", 20, 2_000, retainedSize: null, methodTable: 0x101));
+        var after = Snapshot(
+            Type("MyApp.Widget", 30, 3_000, retainedSize: 9_000, methodTable: 0x100));
+
+        var result = new SnapshotComparisonService().Compare(before, after);
+
+        var widget = Assert.Single(result.Deltas);
+        Assert.Equal(30, widget.CountBefore);
+        Assert.Equal(30, widget.CountAfter);
+        Assert.Null(widget.RetainedSizeDelta);
     }
 }

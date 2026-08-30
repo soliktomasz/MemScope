@@ -25,12 +25,17 @@ if (args is ["--leak"])
         baseline.Add(chunk);
     }
 
+    // The leaked list starts as the baseline collection and grows in place, so
+    // the baseline stays rooted across the blocking stdin wait and any GC that
+    // runs while the before-dump is captured — without it, the JIT could treat
+    // the baseline local as dead and the baseline chunks would be collected.
+    var leaked = baseline;
+
     Console.Out.WriteLine("READY");
     Console.Out.Flush();
 
     if (Console.In.ReadLine() == "LEAK")
     {
-        var leaked = new List<byte[]>();
         Console.Out.WriteLine("LEAKING");
         Console.Out.Flush();
         while (true)

@@ -140,6 +140,7 @@
                   AutomationProperties.LiveSetting="Polite">
         <ProgressBar Height="2"
                      AutomationProperties.Name="Comparison progress"
+                     Maximum="1"
                      Value="{Binding Progress}" />
         <TextBlock Classes="secondary"
                    FontSize="12"

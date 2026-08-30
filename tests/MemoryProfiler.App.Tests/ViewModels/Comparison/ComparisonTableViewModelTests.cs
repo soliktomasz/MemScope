@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Windows.Input;
 using MemoryProfiler.App.ViewModels.Comparison;
 using MemoryProfiler.Contracts.Heap;
 using Xunit;
@@ -181,6 +182,38 @@ public sealed class ComparisonTableViewModelTests
             row => Assert.Equal("System.String", row.TypeName),
             row => Assert.Equal("System.Int32", row.TypeName),
             row => Assert.Equal("System.Byte[]", row.TypeName));
+    }
+
+    [Fact]
+    public void SetDeltasRaisesCanExecuteChangedOnAllSortCommands()
+    {
+        var table = new ComparisonTableViewModel();
+        var commands = new (ICommand Command, int Raised)[]
+        {
+            (table.SortByTypeNameCommand, 0),
+            (table.SortByCountDeltaCommand, 0),
+            (table.SortBySizeDeltaCommand, 0),
+            (table.SortByRetainedDeltaCommand, 0),
+        };
+        foreach (var (command, _) in commands)
+        {
+            command.CanExecuteChanged += (_, _) =>
+            {
+                var index = Array.FindIndex(commands, pair => ReferenceEquals(pair.Command, command));
+                commands[index] = (command, commands[index].Raised + 1);
+            };
+        }
+
+        Assert.False(table.SortBySizeDeltaCommand.CanExecute(null));
+
+        table.SetDeltas([Delta("System.String", 10, 20, 10_000, 20_000)]);
+
+        Assert.True(table.SortBySizeDeltaCommand.CanExecute(null));
+        Assert.All(
+            commands,
+            pair => Assert.True(
+                pair.Raised > 0,
+                $"{pair.Command} did not raise CanExecuteChanged when deltas were set."));
     }
 
     [Fact]

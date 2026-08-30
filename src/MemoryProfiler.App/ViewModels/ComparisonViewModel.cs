@@ -184,12 +184,17 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
         CancelCompare();
         var cancellation = new CancellationTokenSource();
         _compareCancellation = cancellation;
-        var linked = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellation.Token,
-            _disposeCancellation.Token);
-        var token = linked.Token;
+        CancellationTokenSource? linked = null;
+        var token = CancellationToken.None;
         try
         {
+            // Created inside the try so a disposed _disposeCancellation (during
+            // view closure) surfaces as a handled error instead of escaping
+            // CompareAsync; the composition and cleanup are unchanged.
+            linked = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellation.Token,
+                _disposeCancellation.Token);
+            token = linked.Token;
             await PublishAsync(() =>
             {
                 if (version != Volatile.Read(ref _compareVersion))
@@ -279,7 +284,7 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
                 _statusText = string.Empty;
                 OnPropertyChanged(nameof(StatusText));
             }).ConfigureAwait(false);
-            linked.Dispose();
+            linked?.Dispose();
             if (ReferenceEquals(_compareCancellation, cancellation))
             {
                 _compareCancellation = null;
