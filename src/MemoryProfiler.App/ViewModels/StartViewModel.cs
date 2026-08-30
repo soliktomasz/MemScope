@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Windows.Input;
+using MemoryProfiler.Analysis.Comparison;
 using MemoryProfiler.Analysis.Dominators;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
@@ -22,13 +23,16 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
     private readonly IObjectReferenceService? _referenceService;
     private readonly IGcRootService? _gcRootService;
     private readonly IDominatorTreeService? _dominatorService;
+    private readonly ISnapshotComparisonService? _comparisonService;
     private readonly IDumpFilePicker? _dumpFilePicker;
     private readonly AsyncCommand _attachToProcessCommand;
     private readonly AsyncCommand _attachSelectedProcessCommand;
     private readonly AsyncCommand _openDumpCommand;
+    private readonly AsyncCommand _compareSnapshotsCommand;
     private bool _isProcessPickerVisible;
     private LiveSessionViewModel? _liveSession;
     private SnapshotViewModel? _snapshot;
+    private ComparisonViewModel? _comparison;
     private string? _dumpErrorMessage;
     private bool _isDisposed;
 
@@ -76,7 +80,8 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         IHeapObjectRepository? objectRepository = null,
         IObjectReferenceService? referenceService = null,
         IGcRootService? gcRootService = null,
-        IDominatorTreeService? dominatorService = null)
+        IDominatorTreeService? dominatorService = null,
+        ISnapshotComparisonService? comparisonService = null)
     {
         ArgumentNullException.ThrowIfNull(processPicker);
         ArgumentNullException.ThrowIfNull(sessionFactory);
@@ -92,19 +97,32 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         _referenceService = referenceService;
         _gcRootService = gcRootService;
         _dominatorService = dominatorService;
+        _comparisonService = comparisonService;
         _attachToProcessCommand = new AsyncCommand(ShowProcessPickerAsync);
         _attachSelectedProcessCommand = new AsyncCommand(
             StartLiveSessionAsync,
-            () => ProcessPicker.SelectedProcess is not null && LiveSession is null);
+            () => ProcessPicker.SelectedProcess is not null &&
+                  LiveSession is null &&
+                  Snapshot is null &&
+                  Comparison is null);
         _openDumpCommand = new AsyncCommand(
             OpenDumpAsync,
             () => Snapshot is null &&
+                  Comparison is null &&
                   _dumpFilePicker is not null &&
                   _snapshotLoader is not null &&
                   _objectRepository is not null &&
                   _referenceService is not null &&
                   _gcRootService is not null &&
                   _dominatorService is not null);
+        _compareSnapshotsCommand = new AsyncCommand(
+            ShowComparisonAsync,
+            () => Comparison is null &&
+                  LiveSession is null &&
+                  Snapshot is null &&
+                  _dumpFilePicker is not null &&
+                  _snapshotLoader is not null &&
+                  _comparisonService is not null);
         ProcessPicker.PropertyChanged += OnProcessPickerPropertyChanged;
     }
 
@@ -126,6 +144,7 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
 
             OnPropertyChanged(nameof(IsStartVisible));
             OnPropertyChanged(nameof(IsLiveSessionVisible));
+            OnPropertyChanged(nameof(IsComparisonVisible));
             _attachSelectedProcessCommand.NotifyCanExecuteChanged();
         }
     }
@@ -143,15 +162,37 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
             OnPropertyChanged(nameof(IsStartVisible));
             OnPropertyChanged(nameof(IsLiveSessionVisible));
             OnPropertyChanged(nameof(IsSnapshotVisible));
+            OnPropertyChanged(nameof(IsComparisonVisible));
             _openDumpCommand.NotifyCanExecuteChanged();
+            _compareSnapshotsCommand.NotifyCanExecuteChanged();
         }
     }
 
-    public bool IsStartVisible => LiveSession is null && Snapshot is null;
+    public ComparisonViewModel? Comparison
+    {
+        get => _comparison;
+        private set
+        {
+            if (!SetProperty(ref _comparison, value))
+            {
+                return;
+            }
 
-    public bool IsLiveSessionVisible => LiveSession is not null && Snapshot is null;
+            OnPropertyChanged(nameof(IsStartVisible));
+            OnPropertyChanged(nameof(IsLiveSessionVisible));
+            OnPropertyChanged(nameof(IsSnapshotVisible));
+            OnPropertyChanged(nameof(IsComparisonVisible));
+            _compareSnapshotsCommand.NotifyCanExecuteChanged();
+        }
+    }
 
-    public bool IsSnapshotVisible => Snapshot is not null;
+    public bool IsStartVisible => LiveSession is null && Snapshot is null && Comparison is null;
+
+    public bool IsLiveSessionVisible => LiveSession is not null && Snapshot is null && Comparison is null;
+
+    public bool IsSnapshotVisible => Snapshot is not null && Comparison is null;
+
+    public bool IsComparisonVisible => Comparison is not null;
 
     public bool IsProcessPickerVisible
     {
@@ -160,6 +201,8 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
     }
 
     public ICommand OpenDumpCommand => _openDumpCommand;
+
+    public ICommand CompareSnapshotsCommand => _compareSnapshotsCommand;
 
     public string DumpErrorMessage => _dumpErrorMessage ?? string.Empty;
 
@@ -176,7 +219,7 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
         var selectedProcess = ProcessPicker.SelectedProcess;
-        if (selectedProcess is null || LiveSession is not null)
+        if (selectedProcess is null || LiveSession is not null || Comparison is not null)
         {
             return;
         }
@@ -213,6 +256,7 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
         if (Snapshot is not null ||
+            Comparison is not null ||
             _dumpFilePicker is null ||
             _snapshotLoader is null ||
             _objectRepository is null ||
@@ -271,6 +315,43 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         }
     }
 
+    public Task ShowComparisonAsync()
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        if (Comparison is not null ||
+            _snapshotLoader is null ||
+            _comparisonService is null ||
+            _dumpFilePicker is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var comparison = new ComparisonViewModel(
+            _snapshotLoader,
+            _comparisonService,
+            _uiDispatcher,
+            _dumpFilePicker,
+            close: CloseComparisonAsync,
+            dominatorService: _dominatorService);
+        Comparison = comparison;
+        return Task.CompletedTask;
+    }
+
+    public async Task CloseComparisonAsync()
+    {
+        var comparison = Comparison;
+        if (comparison is null)
+        {
+            return;
+        }
+
+        await comparison.DisposeAsync();
+        if (ReferenceEquals(Comparison, comparison))
+        {
+            Comparison = null;
+        }
+    }
+
     private async Task OpenSnapshotAsync(string path)
     {
         if (_snapshotLoader is null ||
@@ -326,6 +407,12 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         {
             await Snapshot.DisposeAsync();
             Snapshot = null;
+        }
+
+        if (Comparison is not null)
+        {
+            await Comparison.DisposeAsync();
+            Comparison = null;
         }
     }
 

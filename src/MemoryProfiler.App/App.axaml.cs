@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using MemoryProfiler.Analysis.Comparison;
 using MemoryProfiler.Analysis.Dominators;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
@@ -37,7 +38,8 @@ public partial class App : Application
                 new ClrMdHeapObjectRepository(),
                 new ClrMdObjectReferenceService(),
                 new GcRootService(),
-                new DominatorTreeService());
+                new DominatorTreeService(),
+                new SnapshotComparisonService());
             mainWindow = new MainWindow(viewModel);
             desktop.MainWindow = mainWindow;
         }

@@ -85,6 +85,9 @@
         <Button Classes="action"
                 Command="{Binding OpenDumpCommand}"
                 Content="Open Dump" />
+        <Button Classes="action"
+                Command="{Binding CompareSnapshotsCommand}"
+                Content="Compare Snapshots" />
       </StackPanel>
 
       <Border IsVisible="{Binding HasDumpError}"
@@ -267,6 +270,9 @@
     </Grid>
     <Grid IsVisible="{Binding IsSnapshotVisible}">
       <views:SnapshotView DataContext="{Binding Snapshot}" />
+    </Grid>
+    <Grid IsVisible="{Binding IsComparisonVisible}">
+      <views:ComparisonView DataContext="{Binding Comparison}" />
     </Grid>
   </Grid>
 </Window>

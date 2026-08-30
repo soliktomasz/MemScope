@@ -1,5 +1,6 @@
 using System.Collections.Specialized;
 using System.Runtime.CompilerServices;
+using MemoryProfiler.Analysis.Comparison;
 using MemoryProfiler.Analysis.Dominators;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
@@ -399,6 +400,112 @@ public sealed class StartViewModelTests
             new StubDominatorService(new DominatorAnalysisResult([], [])));
 
         Assert.True(start.OpenDumpCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task CompareSnapshotsIsDisabledUntilLoaderComparisonAndPickerAreSupplied()
+    {
+        using var start = new StartViewModel(
+            new ProcessPickerViewModel(StubDiscovery.Returning()),
+            new StubLiveSessionFactory(new StubLiveSession()),
+            ImmediateUiDispatcher.Instance,
+            new RecordingDumpCaptureService(),
+            new StubDumpDestinationPicker(Path.GetTempPath()),
+            new StubHeapSnapshotLoader(SampleSnapshot()),
+            new StubDumpFilePicker("/tmp/sample.dmp"));
+
+        Assert.False(start.CompareSnapshotsCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task CompareSnapshotsIsEnabledWhenTheComparisonServiceIsSupplied()
+    {
+        using var start = new StartViewModel(
+            new ProcessPickerViewModel(StubDiscovery.Returning()),
+            new StubLiveSessionFactory(new StubLiveSession()),
+            ImmediateUiDispatcher.Instance,
+            new RecordingDumpCaptureService(),
+            new StubDumpDestinationPicker(Path.GetTempPath()),
+            new StubHeapSnapshotLoader(SampleSnapshot()),
+            new StubDumpFilePicker("/tmp/sample.dmp"),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            new StubDominatorService(new DominatorAnalysisResult([], [])),
+            new SnapshotComparisonService());
+
+        Assert.True(start.CompareSnapshotsCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task ShowingComparisonHidesTheStartScreenAndClosesBack()
+    {
+        await using var start = new StartViewModel(
+            new ProcessPickerViewModel(StubDiscovery.Returning()),
+            new StubLiveSessionFactory(new StubLiveSession()),
+            ImmediateUiDispatcher.Instance,
+            new RecordingDumpCaptureService(),
+            new StubDumpDestinationPicker(Path.GetTempPath()),
+            new StubHeapSnapshotLoader(SampleSnapshot()),
+            new StubDumpFilePicker("/tmp/sample.dmp"),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            new StubDominatorService(new DominatorAnalysisResult([], [])),
+            new SnapshotComparisonService());
+
+        Assert.True(start.IsStartVisible);
+        Assert.False(start.IsComparisonVisible);
+
+        await start.ShowComparisonAsync();
+
+        Assert.NotNull(start.Comparison);
+        Assert.True(start.IsComparisonVisible);
+        Assert.False(start.IsStartVisible);
+        Assert.False(start.IsLiveSessionVisible);
+        Assert.False(start.IsSnapshotVisible);
+        Assert.False(start.CompareSnapshotsCommand.CanExecute(null));
+
+        await start.CloseComparisonAsync();
+
+        Assert.Null(start.Comparison);
+        Assert.True(start.IsStartVisible);
+        Assert.False(start.IsComparisonVisible);
+        Assert.True(start.CompareSnapshotsCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task OpenDumpIsDisabledWhileTheComparisonViewIsOpen()
+    {
+        await using var start = new StartViewModel(
+            new ProcessPickerViewModel(StubDiscovery.Returning()),
+            new StubLiveSessionFactory(new StubLiveSession()),
+            ImmediateUiDispatcher.Instance,
+            new RecordingDumpCaptureService(),
+            new StubDumpDestinationPicker(Path.GetTempPath()),
+            new StubHeapSnapshotLoader(SampleSnapshot()),
+            new StubDumpFilePicker("/tmp/sample.dmp"),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            new StubDominatorService(new DominatorAnalysisResult([], [])),
+            new SnapshotComparisonService());
+
+        await start.ShowComparisonAsync();
+
+        Assert.False(start.OpenDumpCommand.CanExecute(null));
+        Assert.False(start.AttachSelectedProcessCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task CloseComparisonWithNoComparisonOpenIsANoOp()
+    {
+        await using var start = new StartViewModel(new ProcessPickerViewModel(StubDiscovery.Returning()));
+
+        await start.CloseComparisonAsync();
+
+        Assert.Null(start.Comparison);
+        Assert.True(start.IsStartVisible);
     }
 
     [Fact]
