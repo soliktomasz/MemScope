@@ -76,16 +76,27 @@
                  Text="Inspect managed processes and memory snapshots." />
     </StackPanel>
 
-    <StackPanel Grid.Row="1"
-                Orientation="Horizontal"
-                Spacing="10">
-      <Button Classes="action primary-action"
-              Command="{Binding AttachToProcessCommand}"
-              Content="Attach to Process" />
-      <Button Classes="action"
-              IsEnabled="False"
-              ToolTip.Tip="Dump files are not supported yet."
-              Content="Open Dump" />
+    <StackPanel Grid.Row="1" Spacing="12">
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <Button Classes="action primary-action"
+                Command="{Binding AttachToProcessCommand}"
+                Content="Attach to Process" />
+        <Button Classes="action"
+                Command="{Binding OpenDumpCommand}"
+                Content="Open Dump" />
+      </StackPanel>
+
+      <Border IsVisible="{Binding HasDumpError}"
+              Padding="12,9"
+              CornerRadius="{DynamicResource AppCornerRadius}"
+              AutomationProperties.Name="{Binding DumpErrorMessage}"
+              AutomationProperties.LiveSetting="Assertive"
+              Background="{DynamicResource AppErrorSurfaceBrush}">
+        <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
+                   FontSize="13"
+                   TextWrapping="Wrap"
+                   Text="{Binding DumpErrorMessage}" />
+      </Border>
     </StackPanel>
 
     <ScrollViewer Grid.Row="2"
@@ -252,6 +263,9 @@
   </Grid>
     <Grid IsVisible="{Binding IsLiveSessionVisible}">
       <views:LiveSessionView DataContext="{Binding LiveSession}" />
+    </Grid>
+    <Grid IsVisible="{Binding IsSnapshotVisible}">
+      <views:SnapshotView DataContext="{Binding Snapshot}" />
     </Grid>
   </Grid>
 </Window>

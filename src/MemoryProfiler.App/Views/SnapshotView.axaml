@@ -1,0 +1,329 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MemoryProfiler.App.ViewModels"
+             xmlns:types="using:MemoryProfiler.App.ViewModels.Types"
+             x:Class="MemoryProfiler.App.Views.SnapshotView"
+             x:DataType="vm:SnapshotViewModel"
+             x:CompileBindings="True">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.dashboard-title">
+      <Setter Property="FontSize" Value="24" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
+    </Style>
+    <Style Selector="TextBlock.section-label">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
+    </Style>
+    <Style Selector="TextBlock.metric-value">
+      <Setter Property="FontFamily" Value="Cascadia Mono, Menlo, Consolas" />
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
+    </Style>
+    <Style Selector="TextBlock.secondary">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
+    </Style>
+    <Style Selector="TextBlock.mono-data">
+      <Setter Property="FontFamily" Value="Cascadia Mono, Menlo, Consolas" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
+    </Style>
+    <Style Selector="Button.dashboard-action">
+      <Setter Property="MinHeight" Value="36" />
+      <Setter Property="Padding" Value="15,7" />
+      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.table-header">
+      <Setter Property="MinHeight" Value="32" />
+      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
+    </Style>
+    <Style Selector="Border.skeleton">
+      <Setter Property="Height" Value="12" />
+      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceSubtleBrush}" />
+    </Style>
+    <Style Selector="ListBox.type-list">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="ListBox.type-list ListBoxItem">
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid Margin="32,26,32,28"
+        RowDefinitions="Auto,Auto,Auto,*"
+        RowSpacing="16">
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="20">
+      <StackPanel Spacing="4">
+        <TextBlock Classes="dashboard-title" Text="Snapshot" />
+        <TextBlock Classes="secondary"
+                   FontSize="13"
+                   Text="{Binding ProcessDescription}" />
+      </StackPanel>
+      <Button Grid.Column="1"
+              Classes="dashboard-action"
+              VerticalAlignment="Top"
+              Command="{Binding CloseCommand}"
+              Content="Close" />
+    </Grid>
+
+    <Grid Grid.Row="1"
+          IsVisible="{Binding IsReady}"
+          ColumnDefinitions="Auto,Auto,Auto,Auto,*"
+          ColumnSpacing="34">
+      <StackPanel Spacing="5">
+        <TextBlock Classes="section-label" Text="RUNTIME" />
+        <TextBlock Classes="metric-value" Text="{Binding RuntimeDisplay}" />
+      </StackPanel>
+      <StackPanel Grid.Column="1" Spacing="5">
+        <TextBlock Classes="section-label" Text="CAPTURED AT" />
+        <TextBlock Classes="metric-value" Text="{Binding CapturedAtDisplay}" />
+      </StackPanel>
+      <StackPanel Grid.Column="2" Spacing="5">
+        <TextBlock Classes="section-label" Text="OBJECTS" />
+        <TextBlock Classes="metric-value" Text="{Binding ObjectCountDisplay}" />
+      </StackPanel>
+      <StackPanel Grid.Column="3" Spacing="5">
+        <TextBlock Classes="section-label" Text="HEAP SIZE" />
+        <TextBlock Classes="metric-value" Text="{Binding HeapSizeDisplay}" />
+      </StackPanel>
+      <StackPanel Grid.Column="4"
+                  HorizontalAlignment="Right"
+                  VerticalAlignment="Bottom"
+                  Margin="0,0,2,2">
+        <TextBlock Classes="secondary"
+                   FontSize="12"
+                   TextTrimming="CharacterEllipsis"
+                   ToolTip.Tip="{Binding SourcePath}"
+                   Text="{Binding SourcePath}" />
+      </StackPanel>
+    </Grid>
+
+    <Grid Grid.Row="2"
+          IsVisible="{Binding IsReady}"
+          ColumnDefinitions="*,Auto,Auto,Auto"
+          ColumnSpacing="12">
+      <StackPanel Spacing="5">
+        <TextBlock Classes="section-label" Text="SEARCH" />
+        <TextBox Width="320"
+                 AutomationProperties.Name="Search types"
+                 Watermark="Search type or namespace"
+                 Text="{Binding Types.SearchText}" />
+      </StackPanel>
+      <StackPanel Grid.Column="1" Spacing="5">
+        <TextBlock Classes="section-label" Text="ASSEMBLY" />
+        <ComboBox Width="200"
+                  AutomationProperties.Name="Assembly filter"
+                  ItemsSource="{Binding Types.AssemblyFilters}"
+                  SelectedItem="{Binding Types.SelectedAssemblyFilter, Mode=TwoWay}" />
+      </StackPanel>
+      <StackPanel Grid.Column="2" Spacing="5">
+        <TextBlock Classes="section-label" Text="MIN SIZE" />
+        <TextBox Width="140"
+                 AutomationProperties.Name="Minimum size filter"
+                 Watermark="e.g. 100 KB"
+                 Text="{Binding Types.MinimumSizeText}" />
+      </StackPanel>
+      <StackPanel Grid.Column="3"
+                  HorizontalAlignment="Right"
+                  VerticalAlignment="Bottom"
+                  Margin="0,0,2,8">
+        <TextBlock Classes="secondary"
+                   FontSize="12"
+                   Text="{Binding Types.ShownSummary}" />
+      </StackPanel>
+    </Grid>
+
+    <Grid Grid.Row="3"
+          RowDefinitions="Auto,*">
+      <Grid Grid.Row="0"
+            IsVisible="{Binding IsReady}"
+            ColumnDefinitions="*,190,120,110,100"
+            ColumnSpacing="8"
+            Background="{DynamicResource AppSurfaceSubtleBrush}">
+        <Button Grid.Column="0"
+                Classes="table-header"
+                Command="{Binding Types.SortByTypeNameCommand}"
+                ToolTip.Tip="{Binding Types.TypeNameSortDescription}"
+                Content="{Binding Types.TypeNameHeader}" />
+        <Button Grid.Column="1"
+                Classes="table-header"
+                Command="{Binding Types.SortByAssemblyCommand}"
+                ToolTip.Tip="{Binding Types.AssemblySortDescription}"
+                Content="{Binding Types.AssemblyHeader}" />
+        <Button Grid.Column="2"
+                Classes="table-header"
+                HorizontalContentAlignment="Right"
+                Command="{Binding Types.SortByCountCommand}"
+                ToolTip.Tip="{Binding Types.CountSortDescription}"
+                Content="{Binding Types.CountHeader}" />
+        <Button Grid.Column="3"
+                Classes="table-header"
+                HorizontalContentAlignment="Right"
+                Command="{Binding Types.SortByShallowSizeCommand}"
+                ToolTip.Tip="{Binding Types.ShallowSizeSortDescription}"
+                Content="{Binding Types.ShallowSizeHeader}" />
+        <Button Grid.Column="4"
+                Classes="table-header"
+                HorizontalContentAlignment="Right"
+                Command="{Binding Types.SortByRetainedSizeCommand}"
+                ToolTip.Tip="{Binding Types.RetainedSizeSortDescription}"
+                Content="{Binding Types.RetainedSizeHeader}" />
+      </Grid>
+
+      <Grid Grid.Row="1">
+        <StackPanel IsVisible="{Binding ShowLoading}"
+                    Margin="10,22"
+                    Spacing="16">
+          <ProgressBar Height="2"
+                       IsIndeterminate="True"
+                       AutomationProperties.Name="Analyzing snapshot"
+                       AutomationProperties.LiveSetting="Polite" />
+          <TextBlock Classes="secondary"
+                     FontSize="13"
+                     Text="Analyzing the managed heap..." />
+          <StackPanel Spacing="14">
+            <Grid ColumnDefinitions="*,140,100,90" ColumnSpacing="28">
+              <Border Grid.Column="0" Classes="skeleton" />
+              <Border Grid.Column="1" Classes="skeleton" />
+              <Border Grid.Column="2" Classes="skeleton" />
+              <Border Grid.Column="3" Classes="skeleton" />
+            </Grid>
+            <Grid ColumnDefinitions="*,140,100,90" ColumnSpacing="28">
+              <Border Grid.Column="0" Classes="skeleton" />
+              <Border Grid.Column="1" Classes="skeleton" />
+              <Border Grid.Column="2" Classes="skeleton" />
+              <Border Grid.Column="3" Classes="skeleton" />
+            </Grid>
+            <Grid ColumnDefinitions="*,140,100,90" ColumnSpacing="28">
+              <Border Grid.Column="0" Classes="skeleton" />
+              <Border Grid.Column="1" Classes="skeleton" />
+              <Border Grid.Column="2" Classes="skeleton" />
+              <Border Grid.Column="3" Classes="skeleton" />
+            </Grid>
+          </StackPanel>
+        </StackPanel>
+
+        <Border IsVisible="{Binding ShowError}"
+                Margin="0,18"
+                Padding="12,9"
+                CornerRadius="{DynamicResource AppCornerRadius}"
+                AutomationProperties.Name="{Binding ErrorMessage}"
+                AutomationProperties.LiveSetting="Assertive"
+                Background="{DynamicResource AppErrorSurfaceBrush}">
+          <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
+                     FontSize="13"
+                     TextWrapping="Wrap"
+                     Text="{Binding ErrorMessage}" />
+        </Border>
+
+        <Border IsVisible="{Binding ShowEmpty}"
+                Margin="0,18"
+                BorderBrush="{DynamicResource AppBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="{DynamicResource AppCornerRadius}"
+                Padding="24">
+          <StackPanel HorizontalAlignment="Center"
+                      VerticalAlignment="Center"
+                      Spacing="6">
+            <TextBlock HorizontalAlignment="Center"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource AppTextPrimaryBrush}"
+                       Text="No managed types found" />
+            <TextBlock HorizontalAlignment="Center"
+                       Classes="secondary"
+                       Text="The dump contains no walkable managed heap types." />
+          </StackPanel>
+        </Border>
+
+        <Border IsVisible="{Binding ShowNoFilteredTypes}"
+                Margin="0,18"
+                BorderBrush="{DynamicResource AppBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="{DynamicResource AppCornerRadius}"
+                Padding="24">
+          <StackPanel HorizontalAlignment="Center"
+                      VerticalAlignment="Center"
+                      Spacing="6">
+            <TextBlock HorizontalAlignment="Center"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource AppTextPrimaryBrush}"
+                       Text="No types match these filters" />
+            <TextBlock HorizontalAlignment="Center"
+                       Classes="secondary"
+                       Text="Adjust the search, assembly, or minimum size filters." />
+          </StackPanel>
+        </Border>
+
+        <ListBox Classes="type-list"
+                 IsVisible="{Binding ShowTable}"
+                 AutomationProperties.Name="Heap types"
+                 ItemsSource="{Binding Types.FilteredTypes}"
+                 SelectedItem="{Binding Types.SelectedType, Mode=TwoWay}">
+          <ListBox.ItemsPanel>
+            <ItemsPanelTemplate>
+              <VirtualizingStackPanel />
+            </ItemsPanelTemplate>
+          </ListBox.ItemsPanel>
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="types:TypeRowViewModel">
+              <Grid ColumnDefinitions="*,190,120,110,100"
+                    ColumnSpacing="8"
+                    MinHeight="34">
+                <TextBlock Grid.Column="0"
+                           Margin="8,0"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource AppTextPrimaryBrush}"
+                           TextTrimming="CharacterEllipsis"
+                           ToolTip.Tip="{Binding TypeName}"
+                           Text="{Binding TypeName}" />
+                <TextBlock Grid.Column="1"
+                           VerticalAlignment="Center"
+                           Classes="secondary"
+                           TextTrimming="CharacterEllipsis"
+                           ToolTip.Tip="{Binding AssemblyName}"
+                           Text="{Binding AssemblyName}" />
+                <TextBlock Grid.Column="2"
+                           HorizontalAlignment="Right"
+                           VerticalAlignment="Center"
+                           Classes="mono-data"
+                           Text="{Binding CountDisplay}" />
+                <TextBlock Grid.Column="3"
+                           HorizontalAlignment="Right"
+                           VerticalAlignment="Center"
+                           Classes="mono-data"
+                           Text="{Binding ShallowSizeDisplay}" />
+                <TextBlock Grid.Column="4"
+                           IsVisible="{Binding IsRetainedSizeAvailable}"
+                           HorizontalAlignment="Right"
+                           VerticalAlignment="Center"
+                           Classes="mono-data"
+                           Text="{Binding RetainedSizeDisplay}" />
+                <TextBlock Grid.Column="4"
+                           IsVisible="{Binding IsRetainedSizeUnavailable}"
+                           HorizontalAlignment="Right"
+                           VerticalAlignment="Center"
+                           Classes="secondary"
+                           Text="N/A" />
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
+    </Grid>
+  </Grid>
+</UserControl>

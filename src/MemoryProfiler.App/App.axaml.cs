@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels;
 using MemoryProfiler.Diagnostics.Dumps;
@@ -20,12 +21,15 @@ public partial class App : Application
             var processPicker = new ProcessPickerViewModel(new DotNetProcessDiscovery());
             MainWindow? mainWindow = null;
             var destinationPicker = new AvaloniaDumpDestinationPicker(() => mainWindow);
+            var dumpFilePicker = new AvaloniaDumpFilePicker(() => mainWindow);
             var viewModel = new StartViewModel(
                 processPicker,
                 new LiveDiagnosticsSessionFactory(),
                 AvaloniaUiDispatcher.Instance,
                 new DumpCaptureService(),
-                destinationPicker);
+                destinationPicker,
+                new ClrMdHeapSnapshotLoader(),
+                dumpFilePicker);
             mainWindow = new MainWindow(viewModel);
             desktop.MainWindow = mainWindow;
         }

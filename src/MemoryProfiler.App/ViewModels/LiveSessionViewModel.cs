@@ -24,9 +24,11 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
     private readonly AsyncCommand _disconnectCommand;
     private readonly AsyncCommand _closeCommand;
     private readonly AsyncCommand _captureSnapshotCommand;
+    private readonly AsyncCommand _analyzeSnapshotCommand;
     private readonly RelayCommand _cancelCaptureCommand;
     private readonly IDumpCaptureService? _dumpCaptureService;
     private readonly IDumpDestinationPicker? _dumpDestinationPicker;
+    private readonly Func<string, Task>? _analyzeSnapshot;
     private ILiveDiagnosticsSession? _session;
     private Task? _runTask;
     private Task? _disposeTask;
@@ -52,7 +54,8 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         int maximumGcEvents = MaximumGcEvents,
         Func<Task>? closeSession = null,
         IDumpCaptureService? dumpCaptureService = null,
-        IDumpDestinationPicker? dumpDestinationPicker = null)
+        IDumpDestinationPicker? dumpDestinationPicker = null,
+        Func<string, Task>? analyzeSnapshot = null)
     {
         if (processId <= 0)
         {
@@ -79,6 +82,7 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         _maximumMetricSamples = maximumMetricSamples;
         _dumpCaptureService = dumpCaptureService;
         _dumpDestinationPicker = dumpDestinationPicker;
+        _analyzeSnapshot = analyzeSnapshot;
         MetricHistory = new ReadOnlyObservableCollection<MemoryMetrics>(_metricHistory);
         GcTimeline = new GcTimelineViewModel(maximumGcEvents);
         _disconnectCommand = new AsyncCommand(DisconnectAsync, () => IsConnecting || IsLive);
@@ -88,6 +92,9 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         _captureSnapshotCommand = new AsyncCommand(
             CaptureSnapshotAsync,
             () => CanCaptureSnapshot);
+        _analyzeSnapshotCommand = new AsyncCommand(
+            AnalyzeSnapshotAsync,
+            () => CanAnalyzeSnapshot);
         _cancelCaptureCommand = new RelayCommand(CancelCapture, () => IsCapturing);
     }
 
@@ -113,7 +120,14 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
 
     public ICommand CaptureSnapshotCommand => _captureSnapshotCommand;
 
+    public ICommand AnalyzeSnapshotCommand => _analyzeSnapshotCommand;
+
     public ICommand CancelCaptureCommand => _cancelCaptureCommand;
+
+    public bool CanAnalyzeSnapshot =>
+        !IsCapturing &&
+        CapturedDumpPath.Length > 0 &&
+        _analyzeSnapshot is not null;
 
     public bool IsCapturing
     {
@@ -123,7 +137,9 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
             if (SetProperty(ref _isCapturing, value))
             {
                 OnPropertyChanged(nameof(CanCaptureSnapshot));
+                OnPropertyChanged(nameof(CanAnalyzeSnapshot));
                 _captureSnapshotCommand.NotifyCanExecuteChanged();
+                _analyzeSnapshotCommand.NotifyCanExecuteChanged();
                 _cancelCaptureCommand.NotifyCanExecuteChanged();
             }
         }
@@ -166,7 +182,14 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
     public string CapturedDumpPath
     {
         get => _capturedDumpPath;
-        private set => SetProperty(ref _capturedDumpPath, value);
+        private set
+        {
+            if (SetProperty(ref _capturedDumpPath, value))
+            {
+                OnPropertyChanged(nameof(CanAnalyzeSnapshot));
+                _analyzeSnapshotCommand.NotifyCanExecuteChanged();
+            }
+        }
     }
 
     public bool IsConnecting
@@ -414,6 +437,31 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         }
 
         RequestCancellation(cancellation);
+    }
+
+    public async Task AnalyzeSnapshotAsync()
+    {
+        if (Volatile.Read(ref _disposed) != 0 ||
+            !CanAnalyzeSnapshot ||
+            _analyzeSnapshot is null)
+        {
+            return;
+        }
+
+        var path = CapturedDumpPath;
+        try
+        {
+            await _analyzeSnapshot(path);
+        }
+        catch (Exception exception)
+        {
+            await PublishAsync(() =>
+            {
+                CaptureStatusMessage = string.Empty;
+                CaptureErrorMessage =
+                    $"Unable to open the snapshot. {exception.Message}";
+            }).ConfigureAwait(false);
+        }
     }
 
     public ValueTask DisposeAsync()

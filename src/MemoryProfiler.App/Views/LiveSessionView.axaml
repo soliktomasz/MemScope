@@ -108,7 +108,7 @@
                    IsVisible="{Binding IsCapturing}"
                    IsIndeterminate="True" />
       <Grid IsVisible="{Binding HasCaptureStatus}"
-            ColumnDefinitions="Auto,*"
+            ColumnDefinitions="Auto,*,Auto"
             ColumnSpacing="10"
             AutomationProperties.Name="{Binding CaptureStatusMessage}"
             AutomationProperties.LiveSetting="Polite">
@@ -123,6 +123,13 @@
                    TextTrimming="CharacterEllipsis"
                    ToolTip.Tip="{Binding CapturedDumpPath}"
                    Text="{Binding CapturedDumpPath}" />
+        <Button Grid.Column="2"
+                Classes="dashboard-action"
+                MinHeight="28"
+                Padding="12,4"
+                IsVisible="{Binding CanAnalyzeSnapshot}"
+                Command="{Binding AnalyzeSnapshotCommand}"
+                Content="Analyze" />
       </Grid>
       <Border IsVisible="{Binding HasError}"
               Padding="12,9"
