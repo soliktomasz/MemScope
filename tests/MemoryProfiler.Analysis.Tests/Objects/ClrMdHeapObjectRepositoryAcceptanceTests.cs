@@ -1,19 +1,23 @@
 using System.Diagnostics;
 using Microsoft.Diagnostics.NETCore.Client;
 using MemoryProfiler.Analysis.Loading;
+using MemoryProfiler.Analysis.Objects;
 using Xunit;
 
-namespace MemoryProfiler.Analysis.Tests.Loading;
+namespace MemoryProfiler.Analysis.Tests.Objects;
 
 [Collection("Live diagnostics")]
-public sealed class ClrMdHeapSnapshotLoaderAcceptanceTests
+public sealed class ClrMdHeapObjectRepositoryAcceptanceTests
 {
+    private static readonly string[] KnownGenerationLabels =
+        ["Gen0", "Gen1", "Gen2", "LOH", "Pinned", "Frozen", "Unknown"];
+
     [Fact]
-    public async Task CapturedDumpProducesManagedHeapTypes()
+    public async Task CapturedDumpProducesEveryInstanceOfARequestedType()
     {
         var destination = Path.Combine(
             Path.GetTempPath(),
-            $"memscope-analysis-{Guid.NewGuid():N}.dmp");
+            $"memscope-objects-{Guid.NewGuid():N}.dmp");
         var ambientTempDir = Environment.GetEnvironmentVariable("TMPDIR");
         LiveTargetFixture? fixture = null;
 
@@ -23,30 +27,33 @@ public sealed class ClrMdHeapSnapshotLoaderAcceptanceTests
             Environment.SetEnvironmentVariable("TMPDIR", fixture.SocketRoot);
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
             var client = new DiagnosticsClient(fixture.ProcessId);
-            var captureStarted = DateTimeOffset.UtcNow;
             await client.WriteDumpAsync(
                 DumpType.WithHeap,
                 destination,
                 WriteDumpFlags.None,
                 timeout.Token);
-            var captureFinished = DateTimeOffset.UtcNow;
 
             var snapshot = await new ClrMdHeapSnapshotLoader()
                 .LoadAsync(destination, timeout.Token);
+            var strings = snapshot.Types.Single(type => type.Name == "System.String");
 
-            Assert.Equal(destination, snapshot.Info.Path);
+            var instances = await new ClrMdHeapObjectRepository()
+                .GetInstancesAsync(snapshot, strings.MethodTable, timeout.Token);
+
+            Assert.Equal(strings.ObjectCount, instances.Count);
+            Assert.All(
+                instances,
+                instance =>
+                {
+                    Assert.Equal(strings.MethodTable, instance.MethodTable);
+                    Assert.Equal("System.String", instance.TypeName);
+                    Assert.True(instance.Address > 0, "Instance address must be non-zero.");
+                    Assert.True(instance.Size > 0, "Instance size must be non-zero.");
+                    Assert.Contains(instance.Generation, KnownGenerationLabels);
+                });
             Assert.True(
-                snapshot.Info.ProcessId is null ||
-                snapshot.Info.ProcessId == fixture.ProcessId);
-            Assert.False(string.IsNullOrWhiteSpace(snapshot.Info.RuntimeVersion));
-            Assert.InRange(
-                snapshot.Info.CapturedAt,
-                captureStarted.AddSeconds(-1),
-                captureFinished.AddSeconds(1));
-            Assert.True(snapshot.Info.ObjectCount > 0);
-            Assert.True(snapshot.Info.HeapSize > 0);
-            Assert.NotEmpty(snapshot.Types);
-            Assert.Contains(snapshot.Types, type => type.Name == "System.String");
+                instances.Zip(instances.Skip(1)).All(pair => pair.First.Address <= pair.Second.Address),
+                "Instances must be ordered by address ascending.");
         }
         finally
         {

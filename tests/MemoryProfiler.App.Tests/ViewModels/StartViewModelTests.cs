@@ -1,6 +1,7 @@
 using System.Collections.Specialized;
 using System.Runtime.CompilerServices;
 using MemoryProfiler.Analysis.Loading;
+using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels;
 using MemoryProfiler.Contracts.Heap;
@@ -353,7 +354,8 @@ public sealed class StartViewModelTests
             new RecordingDumpCaptureService(),
             new StubDumpDestinationPicker(Path.GetTempPath()),
             new StubHeapSnapshotLoader(SampleSnapshot()),
-            new StubDumpFilePicker(null));
+            new StubDumpFilePicker(null),
+            new StubHeapObjectRepository([]));
 
         await start.OpenDumpAsync();
 
@@ -374,7 +376,8 @@ public sealed class StartViewModelTests
             new RecordingDumpCaptureService(),
             new StubDumpDestinationPicker(Path.GetTempPath()),
             loader,
-            new StubDumpFilePicker("/tmp/sample.dmp"));
+            new StubDumpFilePicker("/tmp/sample.dmp"),
+            new StubHeapObjectRepository([]));
 
         await start.OpenDumpAsync();
 
@@ -396,7 +399,8 @@ public sealed class StartViewModelTests
             new RecordingDumpCaptureService(),
             new StubDumpDestinationPicker(Path.GetTempPath()),
             new StubHeapSnapshotLoader(SampleSnapshot()),
-            new ThrowingDumpFilePicker(new IOException("Picker unavailable.")));
+            new ThrowingDumpFilePicker(new IOException("Picker unavailable.")),
+            new StubHeapObjectRepository([]));
 
         await start.OpenDumpAsync();
 
@@ -419,7 +423,8 @@ public sealed class StartViewModelTests
             new RecordingDumpCaptureService(),
             new StubDumpDestinationPicker(Path.GetTempPath()),
             loader,
-            new StubDumpFilePicker("/tmp/sample.dmp"));
+            new StubDumpFilePicker("/tmp/sample.dmp"),
+            new StubHeapObjectRepository([]));
 
         await start.OpenDumpAsync();
 
@@ -447,7 +452,8 @@ public sealed class StartViewModelTests
             new RecordingDumpCaptureService(),
             new StubDumpDestinationPicker(Path.GetTempPath()),
             new StubHeapSnapshotLoader(SampleSnapshot()),
-            new StubDumpFilePicker(null));
+            new StubDumpFilePicker(null),
+            new StubHeapObjectRepository([]));
         await picker.RefreshAsync();
         picker.SelectedProcess = Assert.Single(picker.Processes);
         var liveRun = start.StartLiveSessionAsync();
@@ -484,7 +490,8 @@ public sealed class StartViewModelTests
             new StubHeapSnapshotLoader(
                 _ => Task.FromException<HeapSnapshot>(
                     new InvalidDataException("Not a dump."))),
-            new StubDumpFilePicker(null));
+            new StubDumpFilePicker(null),
+            new StubHeapObjectRepository([]));
         await picker.RefreshAsync();
         picker.SelectedProcess = Assert.Single(picker.Processes);
         var liveRun = start.StartLiveSessionAsync();
@@ -510,7 +517,8 @@ public sealed class StartViewModelTests
             new RecordingDumpCaptureService(),
             new StubDumpDestinationPicker(Path.GetTempPath()),
             new StubHeapSnapshotLoader(SampleSnapshot()),
-            new StubDumpFilePicker(null));
+            new StubDumpFilePicker(null),
+            new StubHeapObjectRepository([]));
 
         await start.AnalyzeCapturedDumpAsync(string.Empty);
 
@@ -661,5 +669,15 @@ public sealed class StartViewModelTests
             Path = path;
             return _load(cancellationToken);
         }
+    }
+
+    private sealed class StubHeapObjectRepository(IReadOnlyList<HeapObjectInfo> instances)
+        : IHeapObjectRepository
+    {
+        public Task<IReadOnlyList<HeapObjectInfo>> GetInstancesAsync(
+            HeapSnapshot snapshot,
+            ulong methodTable,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(instances);
     }
 }

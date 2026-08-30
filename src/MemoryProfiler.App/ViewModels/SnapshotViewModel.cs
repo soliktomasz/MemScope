@@ -1,5 +1,8 @@
+using System.ComponentModel;
 using System.Globalization;
 using MemoryProfiler.Analysis.Loading;
+using MemoryProfiler.Analysis.Objects;
+using MemoryProfiler.App.ViewModels.Objects;
 using MemoryProfiler.App.ViewModels.Overview;
 using MemoryProfiler.App.ViewModels.Types;
 
@@ -18,18 +21,23 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
 
     internal SnapshotViewModel(
         IHeapSnapshotLoader loader,
+        IHeapObjectRepository objectRepository,
         IUiDispatcher uiDispatcher,
         Func<Task>? close = null)
     {
         ArgumentNullException.ThrowIfNull(loader);
+        ArgumentNullException.ThrowIfNull(objectRepository);
         ArgumentNullException.ThrowIfNull(uiDispatcher);
         _loader = loader;
         _uiDispatcher = uiDispatcher;
         _closeCommand = new AsyncCommand(close ?? (() => Task.CompletedTask));
-        Types.PropertyChanged += (_, _) => NotifyDisplayStateChanged();
+        ObjectInstances = new ObjectInstancesViewModel(objectRepository, uiDispatcher);
+        Types.PropertyChanged += OnTypesPropertyChanged;
     }
 
     public TypeBrowserViewModel Types { get; } = new();
+
+    public ObjectInstancesViewModel ObjectInstances { get; }
 
     public System.Windows.Input.ICommand CloseCommand => _closeCommand;
 
@@ -170,7 +178,42 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         }
 
         _loadCancellation.Dispose();
-        return ValueTask.CompletedTask;
+        return ObjectInstances.DisposeAsync();
+    }
+
+    private void OnTypesPropertyChanged(object? sender, PropertyChangedEventArgs eventArgs)
+    {
+        if (eventArgs.PropertyName == nameof(TypeBrowserViewModel.SelectedType))
+        {
+            _ = RefreshInstancesAsync();
+        }
+
+        NotifyDisplayStateChanged();
+    }
+
+    private async Task RefreshInstancesAsync()
+    {
+        try
+        {
+            var snapshot = _snapshot;
+            var type = Types.SelectedType?.Type;
+            if (snapshot is null || type is null)
+            {
+                await ObjectInstances.ClearAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                await ObjectInstances.ShowAsync(snapshot, type).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer selection or snapshot closure superseded this refresh.
+        }
+        catch (ObjectDisposedException)
+        {
+            // The snapshot was closed while the selection was changing.
+        }
     }
 
     private async Task PublishAsync(Action action)

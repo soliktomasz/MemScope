@@ -1,3 +1,4 @@
+using Microsoft.Diagnostics.Runtime;
 using MemoryProfiler.Analysis.Loading;
 using Xunit;
 
@@ -200,6 +201,8 @@ public sealed class ClrMdHeapSnapshotLoaderTests
                 OnObjectEnumerated?.Invoke();
             }
         }
+
+        public Generation? GetGeneration(ulong address) => null;
 
         public void Dispose() => Disposed = true;
     }
