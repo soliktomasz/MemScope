@@ -261,6 +261,10 @@ public sealed class ClrMdHeapObjectRepositoryTests
         public Generation? GetGeneration(ulong address) =>
             Generations.TryGetValue(address, out var generation) ? generation : null;
 
+        public IEnumerable<ObjectReference> EnumerateOutgoingReferences(ulong sourceAddress) => [];
+
+        public IEnumerable<ObjectReference> EnumerateIncomingReferences(ulong targetAddress) => [];
+
         public IEnumerable<HeapObjectData> EnumerateObjects()
         {
             foreach (var heapObject in objects)

@@ -4,4 +4,6 @@ public sealed record ObjectReference(
     ulong SourceAddress,
     ulong TargetAddress,
     ReferenceKind Kind,
-    string? Name);
+    string? Name,
+    string? SourceTypeName = null,
+    string? TargetTypeName = null);

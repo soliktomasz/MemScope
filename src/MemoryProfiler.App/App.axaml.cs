@@ -3,6 +3,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
+using MemoryProfiler.Analysis.References;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels;
 using MemoryProfiler.Diagnostics.Dumps;
@@ -31,7 +32,8 @@ public partial class App : Application
                 destinationPicker,
                 new ClrMdHeapSnapshotLoader(),
                 dumpFilePicker,
-                new ClrMdHeapObjectRepository());
+                new ClrMdHeapObjectRepository(),
+                new ClrMdObjectReferenceService());
             mainWindow = new MainWindow(viewModel);
             desktop.MainWindow = mainWindow;
         }

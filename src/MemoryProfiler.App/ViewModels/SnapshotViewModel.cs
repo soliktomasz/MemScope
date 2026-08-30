@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Globalization;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
+using MemoryProfiler.Analysis.References;
 using MemoryProfiler.App.ViewModels.Objects;
 using MemoryProfiler.App.ViewModels.Overview;
 using MemoryProfiler.App.ViewModels.Types;
@@ -14,6 +15,8 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
     private readonly IUiDispatcher _uiDispatcher;
     private readonly CancellationTokenSource _loadCancellation = new();
     private readonly AsyncCommand _closeCommand;
+    private readonly RelayCommand<object> _showOutgoingReferencesCommand;
+    private readonly RelayCommand<object> _showIncomingReferencesCommand;
     private HeapSnapshot? _snapshot;
     private string? _errorMessage;
     private bool _isLoading;
@@ -22,16 +25,25 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
     internal SnapshotViewModel(
         IHeapSnapshotLoader loader,
         IHeapObjectRepository objectRepository,
+        IObjectReferenceService referenceService,
         IUiDispatcher uiDispatcher,
         Func<Task>? close = null)
     {
         ArgumentNullException.ThrowIfNull(loader);
         ArgumentNullException.ThrowIfNull(objectRepository);
+        ArgumentNullException.ThrowIfNull(referenceService);
         ArgumentNullException.ThrowIfNull(uiDispatcher);
         _loader = loader;
         _uiDispatcher = uiDispatcher;
         _closeCommand = new AsyncCommand(close ?? (() => Task.CompletedTask));
+        _showOutgoingReferencesCommand = new RelayCommand<object>(
+            ShowOutgoingReferences,
+            parameter => HasSnapshot && CanNavigateFrom(parameter));
+        _showIncomingReferencesCommand = new RelayCommand<object>(
+            ShowIncomingReferences,
+            parameter => HasSnapshot && CanNavigateFrom(parameter));
         ObjectInstances = new ObjectInstancesViewModel(objectRepository, uiDispatcher);
+        ObjectReferences = new ObjectReferencesViewModel(referenceService, uiDispatcher);
         Types.PropertyChanged += OnTypesPropertyChanged;
     }
 
@@ -39,7 +51,15 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
 
     public ObjectInstancesViewModel ObjectInstances { get; }
 
+    public ObjectReferencesViewModel ObjectReferences { get; }
+
     public System.Windows.Input.ICommand CloseCommand => _closeCommand;
+
+    public System.Windows.Input.ICommand ShowOutgoingReferencesCommand =>
+        _showOutgoingReferencesCommand;
+
+    public System.Windows.Input.ICommand ShowIncomingReferencesCommand =>
+        _showIncomingReferencesCommand;
 
     public bool IsLoading
     {
@@ -129,6 +149,10 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
             NotifyDisplayStateChanged();
         }).ConfigureAwait(false);
 
+        // A new snapshot replaces the previous analysis; any references still
+        // shown belong to the old dump and must not survive it.
+        await ObjectReferences.ClearAsync().ConfigureAwait(false);
+
         try
         {
             var snapshot = await _loader.LoadAsync(path, linked.Token).ConfigureAwait(false);
@@ -178,7 +202,13 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         }
 
         _loadCancellation.Dispose();
-        return ObjectInstances.DisposeAsync();
+        return DisposeChildrenAsync();
+    }
+
+    private async ValueTask DisposeChildrenAsync()
+    {
+        await ObjectInstances.DisposeAsync();
+        await ObjectReferences.DisposeAsync();
     }
 
     private void OnTypesPropertyChanged(object? sender, PropertyChangedEventArgs eventArgs)
@@ -213,6 +243,75 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         catch (ObjectDisposedException)
         {
             // The snapshot was closed while the selection was changing.
+        }
+    }
+
+    public void ShowOutgoingReferences(object? parameter) =>
+        ShowReferences(parameter, ReferenceDirection.Outgoing);
+
+    public void ShowIncomingReferences(object? parameter) =>
+        ShowReferences(parameter, ReferenceDirection.Incoming);
+
+    private void ShowReferences(object? parameter, ReferenceDirection direction)
+    {
+        var snapshot = _snapshot;
+        if (snapshot is null || !TryResolveEndpoint(parameter, out var address, out var typeName))
+        {
+            return;
+        }
+
+        _ = ShowReferencesAsync(snapshot, typeName, address, direction);
+    }
+
+    private async Task ShowReferencesAsync(
+        HeapSnapshot snapshot,
+        string typeName,
+        ulong address,
+        ReferenceDirection direction)
+    {
+        try
+        {
+            await ObjectReferences
+                .ShowAsync(snapshot, typeName, address, direction)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer navigation or snapshot closure superseded this one.
+        }
+        catch (ObjectDisposedException)
+        {
+            // The snapshot was closed while the command was executing.
+        }
+    }
+
+    private static bool CanNavigateFrom(object? parameter) =>
+        parameter switch
+        {
+            HeapObjectRowViewModel => true,
+            ObjectReferenceRowViewModel { CanNavigate: true } => true,
+            _ => false,
+        };
+
+    private static bool TryResolveEndpoint(
+        object? parameter,
+        out ulong address,
+        out string typeName)
+    {
+        switch (parameter)
+        {
+            case HeapObjectRowViewModel instance:
+                address = instance.Address;
+                typeName = instance.Instance.TypeName;
+                return true;
+            case ObjectReferenceRowViewModel reference when reference.CanNavigate:
+                address = reference.EndpointAddress;
+                typeName = reference.EndpointTypeName;
+                return true;
+            default:
+                address = 0;
+                typeName = string.Empty;
+                return false;
         }
     }
 

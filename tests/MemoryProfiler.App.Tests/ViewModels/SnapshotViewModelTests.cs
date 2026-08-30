@@ -1,7 +1,9 @@
 using System.Globalization;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
+using MemoryProfiler.Analysis.References;
 using MemoryProfiler.App.Services;
+using MemoryProfiler.App.ViewModels.Objects;
 using MemoryProfiler.App.ViewModels;
 using MemoryProfiler.Contracts.Heap;
 using Xunit;
@@ -35,6 +37,7 @@ public sealed class SnapshotViewModelTests
         await using var viewModel = new SnapshotViewModel(
             loader,
             new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
             ImmediateUiDispatcher.Instance);
 
         await viewModel.LoadAsync("sample.dmp");
@@ -69,6 +72,7 @@ public sealed class SnapshotViewModelTests
         await using var viewModel = new SnapshotViewModel(
             loader,
             new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
             ImmediateUiDispatcher.Instance);
 
         var load = viewModel.LoadAsync("sample.dmp");
@@ -96,6 +100,7 @@ public sealed class SnapshotViewModelTests
         await using var viewModel = new SnapshotViewModel(
             loader,
             new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
             ImmediateUiDispatcher.Instance);
 
         await viewModel.LoadAsync("sample.dmp");
@@ -123,6 +128,7 @@ public sealed class SnapshotViewModelTests
         await using var viewModel = new SnapshotViewModel(
             loader,
             new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
             ImmediateUiDispatcher.Instance);
 
         using var cancellation = new CancellationTokenSource();
@@ -147,6 +153,7 @@ public sealed class SnapshotViewModelTests
         await using var viewModel = new SnapshotViewModel(
             loader,
             new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
             ImmediateUiDispatcher.Instance,
             close: () =>
             {
@@ -174,7 +181,7 @@ public sealed class SnapshotViewModelTests
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
                 throw new OperationCanceledException(cancellationToken);
             });
-        var viewModel = new SnapshotViewModel(loader, new StubHeapObjectRepository([]), ImmediateUiDispatcher.Instance);
+        var viewModel = new SnapshotViewModel(loader, new StubHeapObjectRepository([]), new StubObjectReferenceService([]), ImmediateUiDispatcher.Instance);
 
         var load = viewModel.LoadAsync("sample.dmp");
         await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -195,6 +202,7 @@ public sealed class SnapshotViewModelTests
             new StubSnapshotLoader(
                 Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
             repository,
+            new StubObjectReferenceService([]),
             ImmediateUiDispatcher.Instance);
         await viewModel.LoadAsync("sample.dmp");
 
@@ -218,6 +226,7 @@ public sealed class SnapshotViewModelTests
             new StubSnapshotLoader(
                 Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
             repository,
+            new StubObjectReferenceService([]),
             ImmediateUiDispatcher.Instance);
         await viewModel.LoadAsync("sample.dmp");
 
@@ -249,6 +258,7 @@ public sealed class SnapshotViewModelTests
             new StubSnapshotLoader(
                 Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
             repository,
+            new StubObjectReferenceService([]),
             ImmediateUiDispatcher.Instance);
         await viewModel.LoadAsync("sample.dmp");
 
@@ -259,6 +269,143 @@ public sealed class SnapshotViewModelTests
 
         Assert.True(instancesToken.IsCancellationRequested);
         Assert.False(viewModel.ObjectInstances.HasError);
+    }
+
+    [Fact]
+    public async Task ShowOutgoingReferencesCommandRoutesAnInstanceRowToTheReferencesPane()
+    {
+        var referenceService = new StubObjectReferenceService(
+            [new ObjectReference(0x1000, 0x2000, ReferenceKind.Field, "_child",
+                "System.String", "MyApp.Widget")],
+            []);
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(
+                Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
+            new StubHeapObjectRepository(
+                [new HeapObjectInfo(0x1000, 0x1000, "System.String", 24, "Gen0")]),
+            referenceService,
+            ImmediateUiDispatcher.Instance);
+        await viewModel.LoadAsync("sample.dmp");
+        viewModel.Types.SelectedType = viewModel.Types.FilteredTypes.Single();
+        var instanceRow = Assert.Single(viewModel.ObjectInstances.Instances);
+
+        viewModel.ShowOutgoingReferencesCommand.Execute(instanceRow);
+
+        Assert.True(viewModel.ObjectReferences.HasSelection);
+        Assert.True(viewModel.ObjectReferences.ShowTable);
+        Assert.Equal("System.String", viewModel.ObjectReferences.ObjectTypeName);
+        Assert.Equal("0x000000001000", viewModel.ObjectReferences.AddressDisplay);
+        Assert.Equal(ReferenceDirection.Outgoing, viewModel.ObjectReferences.Direction);
+        var row = Assert.Single(viewModel.ObjectReferences.References);
+        Assert.Equal("MyApp.Widget", row.TypeNameDisplay);
+    }
+
+    [Fact]
+    public async Task ShowIncomingReferencesCommandRoutesAnInstanceRowToTheReferencesPane()
+    {
+        var referenceService = new StubObjectReferenceService(
+            [],
+            [new ObjectReference(0x2000, 0x1000, ReferenceKind.Field, "_owner",
+                "MyApp.Owner", "System.String")]);
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(
+                Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
+            new StubHeapObjectRepository(
+                [new HeapObjectInfo(0x1000, 0x1000, "System.String", 24, "Gen0")]),
+            referenceService,
+            ImmediateUiDispatcher.Instance);
+        await viewModel.LoadAsync("sample.dmp");
+        viewModel.Types.SelectedType = viewModel.Types.FilteredTypes.Single();
+        var instanceRow = Assert.Single(viewModel.ObjectInstances.Instances);
+
+        viewModel.ShowIncomingReferencesCommand.Execute(instanceRow);
+
+        Assert.True(viewModel.ObjectReferences.IsIncoming);
+        Assert.Equal(ReferenceDirection.Incoming, viewModel.ObjectReferences.Direction);
+        var row = Assert.Single(viewModel.ObjectReferences.References);
+        Assert.Equal("MyApp.Owner", row.TypeNameDisplay);
+    }
+
+    [Fact]
+    public async Task ReferenceRowNavigationDrillsIntoTheObjectAtTheOtherEnd()
+    {
+        var referenceService = new StubObjectReferenceService(
+            [new ObjectReference(0x2000, 0x3000, ReferenceKind.Field, "_child",
+                "MyApp.First", "MyApp.Second")],
+            []);
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(
+                Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
+            new StubHeapObjectRepository([]),
+            referenceService,
+            ImmediateUiDispatcher.Instance);
+        await viewModel.LoadAsync("sample.dmp");
+
+        viewModel.ShowOutgoingReferencesCommand.Execute(
+            new HeapObjectRowViewModel(
+                new HeapObjectInfo(0x2000, 0x1000, "MyApp.First", 32, "Gen0")));
+        var referenceRow = Assert.Single(viewModel.ObjectReferences.References);
+        Assert.Equal("MyApp.Second", referenceRow.TypeNameDisplay);
+
+        viewModel.ShowOutgoingReferencesCommand.Execute(referenceRow);
+
+        Assert.Equal("MyApp.Second", viewModel.ObjectReferences.ObjectTypeName);
+        Assert.Equal("0x000000003000", viewModel.ObjectReferences.AddressDisplay);
+    }
+
+    [Fact]
+    public async Task RootReferenceRowCannotNavigate()
+    {
+        var referenceService = new StubObjectReferenceService(
+            [],
+            [new ObjectReference(0, 0x1000, ReferenceKind.Handle, null, null, "System.String")]);
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(
+                Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
+            new StubHeapObjectRepository(
+                [new HeapObjectInfo(0x1000, 0x1000, "System.String", 24, "Gen0")]),
+            referenceService,
+            ImmediateUiDispatcher.Instance);
+        await viewModel.LoadAsync("sample.dmp");
+        viewModel.Types.SelectedType = viewModel.Types.FilteredTypes.Single();
+        var instanceRow = Assert.Single(viewModel.ObjectInstances.Instances);
+        viewModel.ShowIncomingReferencesCommand.Execute(instanceRow);
+        var rootRow = Assert.Single(viewModel.ObjectReferences.References);
+        Assert.True(rootRow.IsRoot);
+        Assert.False(rootRow.CanNavigate);
+
+        Assert.False(viewModel.ShowOutgoingReferencesCommand.CanExecute(rootRow));
+        Assert.False(viewModel.ShowIncomingReferencesCommand.CanExecute(rootRow));
+
+        viewModel.ShowOutgoingReferencesCommand.Execute(rootRow);
+
+        // The pane stays on the original object.
+        Assert.Equal("System.String", viewModel.ObjectReferences.ObjectTypeName);
+    }
+
+    [Fact]
+    public async Task LoadingANewSnapshotClearsTheReferencesPane()
+    {
+        var referenceService = new StubObjectReferenceService(
+            [new ObjectReference(0x1000, 0x2000, ReferenceKind.Field, "_child")],
+            []);
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(
+                Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
+            new StubHeapObjectRepository([]),
+            referenceService,
+            ImmediateUiDispatcher.Instance);
+        await viewModel.LoadAsync("sample.dmp");
+        viewModel.ShowOutgoingReferencesCommand.Execute(
+            new HeapObjectRowViewModel(
+                new HeapObjectInfo(0x1000, 0x1000, "System.String", 24, "Gen0")));
+        Assert.True(viewModel.ObjectReferences.HasSelection);
+
+        await viewModel.LoadAsync("sample.dmp");
+
+        Assert.False(viewModel.ObjectReferences.HasSelection);
+        Assert.True(viewModel.ObjectReferences.ShowIdle);
+        Assert.Empty(viewModel.ObjectReferences.References);
     }
 
     private static string FormatBytes(ulong value)
@@ -329,5 +476,36 @@ public sealed class SnapshotViewModelTests
             RequestedMethodTable = methodTable;
             return _getInstances(snapshot, methodTable, cancellationToken);
         }
+    }
+
+    private sealed class StubObjectReferenceService : IObjectReferenceService
+    {
+        private readonly IReadOnlyList<ObjectReference> _outgoing;
+        private readonly IReadOnlyList<ObjectReference> _incoming;
+
+        public StubObjectReferenceService(IReadOnlyList<ObjectReference> references)
+            : this(references, references)
+        {
+        }
+
+        public StubObjectReferenceService(
+            IReadOnlyList<ObjectReference> outgoing,
+            IReadOnlyList<ObjectReference> incoming)
+        {
+            _outgoing = outgoing;
+            _incoming = incoming;
+        }
+
+        public Task<IReadOnlyList<ObjectReference>> GetOutgoingReferencesAsync(
+            HeapSnapshot snapshot,
+            ulong objectAddress,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(_outgoing);
+
+        public Task<IReadOnlyList<ObjectReference>> GetIncomingReferencesAsync(
+            HeapSnapshot snapshot,
+            ulong objectAddress,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(_incoming);
     }
 }

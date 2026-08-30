@@ -53,3 +53,17 @@ internal sealed class RelayCommand(
     public void NotifyCanExecuteChanged() =>
         CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 }
+
+internal sealed class RelayCommand<T>(
+    Action<T?> execute,
+    Func<T?, bool>? canExecute = null) : ICommand
+{
+    public event EventHandler? CanExecuteChanged;
+
+    public bool CanExecute(object? parameter) => canExecute?.Invoke((T?)parameter) ?? true;
+
+    public void Execute(object? parameter) => execute((T?)parameter);
+
+    public void NotifyCanExecuteChanged() =>
+        CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+}

@@ -2,6 +2,7 @@ using System.Collections.Specialized;
 using System.Runtime.CompilerServices;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
+using MemoryProfiler.Analysis.References;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels;
 using MemoryProfiler.Contracts.Heap;
@@ -355,7 +356,8 @@ public sealed class StartViewModelTests
             new StubDumpDestinationPicker(Path.GetTempPath()),
             new StubHeapSnapshotLoader(SampleSnapshot()),
             new StubDumpFilePicker(null),
-            new StubHeapObjectRepository([]));
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]));
 
         await start.OpenDumpAsync();
 
@@ -377,7 +379,8 @@ public sealed class StartViewModelTests
             new StubDumpDestinationPicker(Path.GetTempPath()),
             loader,
             new StubDumpFilePicker("/tmp/sample.dmp"),
-            new StubHeapObjectRepository([]));
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]));
 
         await start.OpenDumpAsync();
 
@@ -400,7 +403,8 @@ public sealed class StartViewModelTests
             new StubDumpDestinationPicker(Path.GetTempPath()),
             new StubHeapSnapshotLoader(SampleSnapshot()),
             new ThrowingDumpFilePicker(new IOException("Picker unavailable.")),
-            new StubHeapObjectRepository([]));
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]));
 
         await start.OpenDumpAsync();
 
@@ -424,7 +428,8 @@ public sealed class StartViewModelTests
             new StubDumpDestinationPicker(Path.GetTempPath()),
             loader,
             new StubDumpFilePicker("/tmp/sample.dmp"),
-            new StubHeapObjectRepository([]));
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]));
 
         await start.OpenDumpAsync();
 
@@ -453,7 +458,8 @@ public sealed class StartViewModelTests
             new StubDumpDestinationPicker(Path.GetTempPath()),
             new StubHeapSnapshotLoader(SampleSnapshot()),
             new StubDumpFilePicker(null),
-            new StubHeapObjectRepository([]));
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]));
         await picker.RefreshAsync();
         picker.SelectedProcess = Assert.Single(picker.Processes);
         var liveRun = start.StartLiveSessionAsync();
@@ -491,7 +497,8 @@ public sealed class StartViewModelTests
                 _ => Task.FromException<HeapSnapshot>(
                     new InvalidDataException("Not a dump."))),
             new StubDumpFilePicker(null),
-            new StubHeapObjectRepository([]));
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]));
         await picker.RefreshAsync();
         picker.SelectedProcess = Assert.Single(picker.Processes);
         var liveRun = start.StartLiveSessionAsync();
@@ -518,7 +525,8 @@ public sealed class StartViewModelTests
             new StubDumpDestinationPicker(Path.GetTempPath()),
             new StubHeapSnapshotLoader(SampleSnapshot()),
             new StubDumpFilePicker(null),
-            new StubHeapObjectRepository([]));
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]));
 
         await start.AnalyzeCapturedDumpAsync(string.Empty);
 
@@ -679,5 +687,21 @@ public sealed class StartViewModelTests
             ulong methodTable,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(instances);
+    }
+
+    private sealed class StubObjectReferenceService(IReadOnlyList<ObjectReference> references)
+        : IObjectReferenceService
+    {
+        public Task<IReadOnlyList<ObjectReference>> GetOutgoingReferencesAsync(
+            HeapSnapshot snapshot,
+            ulong objectAddress,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(references);
+
+        public Task<IReadOnlyList<ObjectReference>> GetIncomingReferencesAsync(
+            HeapSnapshot snapshot,
+            ulong objectAddress,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(references);
     }
 }
