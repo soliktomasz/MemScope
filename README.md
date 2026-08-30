@@ -32,6 +32,18 @@ dotnet run --project src/MemoryProfiler.App
 
 Select **Attach to Process**, choose a running .NET application, and select **Start profiling**.
 
+## Website
+
+The project website is a static site under `docs/`. Preview it locally:
+
+```bash
+python3 -m http.server 8000 -d docs
+```
+
+Then open `http://localhost:8000`.
+
+To publish with GitHub Pages, open the repository's **Settings > Pages**, choose **Deploy from a branch**, then select the default branch and the `/docs` folder. No frontend build step is required.
+
 ## Development
 
 Build the solution:

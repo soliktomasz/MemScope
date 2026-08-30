@@ -11,6 +11,9 @@ DOCS = ROOT / "docs"
 INDEX = DOCS / "index.html"
 STYLES = DOCS / "styles.css"
 SCRIPT = DOCS / "script.js"
+NOT_FOUND = DOCS / "404.html"
+FAVICON = DOCS / "assets" / "favicon.svg"
+README = ROOT / "README.md"
 REPOSITORY_URL = "https://github.com/soliktomasz/MemScope"
 
 
@@ -71,6 +74,18 @@ def assert_relative_assets(source: str) -> None:
     assert all(not value.startswith("/") for value in local_assets), local_assets
 
 
+def assert_local_assets_resolve(source: str) -> None:
+    asset_values = re.findall(r'(?:href|src)="([^"]+)"', source)
+    for value in asset_values:
+        parsed = urlparse(value)
+        if parsed.scheme or value.startswith(("#", "mailto:")):
+            continue
+        candidate = DOCS / parsed.path
+        if candidate.is_dir():
+            candidate = candidate / "index.html"
+        assert candidate.is_file(), f"local asset does not resolve: {value}"
+
+
 def assert_stylesheet_contract() -> None:
     assert STYLES.exists(), "docs/styles.css is missing"
     styles = STYLES.read_text(encoding="utf-8")
@@ -91,6 +106,10 @@ def assert_stylesheet_contract() -> None:
         "min-height: 100dvh",
         ":focus-visible",
         "@media (max-width: 767px)",
+        "font-size: clamp(3.25rem, 4.8vw, 5rem)",
+        "max-width: 16ch",
+        "details:not([open]) > .nav-links",
+        "@media (max-width: 900px) {\n  .hero,\n  .foundation,\n  .get-started",
     ):
         assert contract in styles, f"missing stylesheet contract {contract}"
     for forbidden in ("100vh", "#000000", "#ffffff"):
@@ -106,6 +125,24 @@ def assert_script_contract(parser: SiteParser) -> None:
     script = SCRIPT.read_text(encoding="utf-8")
     for forbidden in ('addEventListener("scroll"', "window.scrollY"):
         assert forbidden not in script, f"forbidden scroll pattern {forbidden}"
+
+
+def assert_deployment_contract(index_source: str) -> None:
+    assert FAVICON.exists(), "docs/assets/favicon.svg is missing"
+    assert NOT_FOUND.exists(), "docs/404.html is missing"
+    not_found_source = NOT_FOUND.read_text(encoding="utf-8")
+    not_found = parse(NOT_FOUND)
+    assert any(href == "./" for href, _ in not_found.links)
+    assert any(href == REPOSITORY_URL for href, _ in not_found.links)
+    not_found_text = " ".join(not_found.visible_text)
+    assert "—" not in not_found_text and "–" not in not_found_text
+
+    readme = README.read_text(encoding="utf-8")
+    for contract in ("## Website", "Deploy from a branch", "/docs"):
+        assert contract in readme, f"README is missing {contract}"
+
+    assert_local_assets_resolve(index_source)
+    assert_local_assets_resolve(not_found_source)
 
 
 def main() -> int:
@@ -130,6 +167,7 @@ def main() -> int:
     assert_relative_assets(source)
     assert_stylesheet_contract()
     assert_script_contract(parser)
+    assert_deployment_contract(source)
 
     print("website structure: ok")
     return 0
