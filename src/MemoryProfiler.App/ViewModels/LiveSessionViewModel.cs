@@ -449,6 +449,7 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         }
 
         var path = CapturedDumpPath;
+        await PublishAsync(() => CaptureErrorMessage = string.Empty).ConfigureAwait(false);
         try
         {
             await _analyzeSnapshot(path);
@@ -457,7 +458,6 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         {
             await PublishAsync(() =>
             {
-                CaptureStatusMessage = string.Empty;
                 CaptureErrorMessage =
                     $"Unable to open the snapshot. {exception.Message}";
             }).ConfigureAwait(false);

@@ -116,24 +116,24 @@
     <Grid Grid.Row="2"
           IsVisible="{Binding IsReady}"
           ColumnDefinitions="*,Auto,Auto,Auto"
-          ColumnSpacing="12">
+          ColumnSpacing="8">
       <StackPanel Spacing="5">
         <TextBlock Classes="section-label" Text="SEARCH" />
-        <TextBox Width="320"
+        <TextBox MaxWidth="380"
                  AutomationProperties.Name="Search types"
                  Watermark="Search type or namespace"
                  Text="{Binding Types.SearchText}" />
       </StackPanel>
       <StackPanel Grid.Column="1" Spacing="5">
         <TextBlock Classes="section-label" Text="ASSEMBLY" />
-        <ComboBox Width="200"
+        <ComboBox Width="170"
                   AutomationProperties.Name="Assembly filter"
                   ItemsSource="{Binding Types.AssemblyFilters}"
                   SelectedItem="{Binding Types.SelectedAssemblyFilter, Mode=TwoWay}" />
       </StackPanel>
       <StackPanel Grid.Column="2" Spacing="5">
         <TextBlock Classes="section-label" Text="MIN SIZE" />
-        <TextBox Width="140"
+        <TextBox Width="110"
                  AutomationProperties.Name="Minimum size filter"
                  Watermark="e.g. 100 KB"
                  Text="{Binding Types.MinimumSizeText}" />

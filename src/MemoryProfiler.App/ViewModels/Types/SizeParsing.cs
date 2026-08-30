@@ -65,8 +65,12 @@ internal static class SizeParsing
             }
         }
 
+        // (double)ulong.MaxValue rounds to 2^64, and every double that rounds to
+        // 2^64 is genuinely greater than ulong.MaxValue, so a >= comparison is an
+        // exact boundary check. Using > here would let a value of exactly 2^64
+        // through and wrap to 0 on the cast.
         var scaled = amount * multiplier;
-        if (scaled > ulong.MaxValue)
+        if (scaled >= (double)ulong.MaxValue)
         {
             return false;
         }

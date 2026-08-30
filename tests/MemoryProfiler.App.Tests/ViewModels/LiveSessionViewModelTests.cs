@@ -218,6 +218,47 @@ public sealed class LiveSessionViewModelTests
     }
 
     [Fact]
+    public async Task AnalyzeRetryClearsThePreviousFailureMessageAndKeepsTheAnalyzeAction()
+    {
+        var session = new StubSession(waitForCancellation: true);
+        var attempt = 0;
+        await using var viewModel = new LiveSessionViewModel(
+            4217,
+            "SampleService",
+            new StubSessionFactory(session),
+            ImmediateUiDispatcher.Instance,
+            dumpCaptureService: new RecordingDumpCaptureService(),
+            dumpDestinationPicker: new StubDumpDestinationPicker(Path.GetTempPath()),
+            analyzeSnapshot: _ =>
+            {
+                attempt++;
+                return attempt == 1
+                    ? Task.FromException(new InvalidDataException("Not a dump."))
+                    : Task.CompletedTask;
+            });
+        var run = viewModel.StartAsync();
+        await session.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await viewModel.CaptureSnapshotAsync();
+
+        viewModel.AnalyzeSnapshotCommand.Execute(null);
+
+        Assert.True(viewModel.HasCaptureError);
+        Assert.Contains("Not a dump.", viewModel.CaptureErrorMessage);
+        Assert.Equal("Snapshot saved", viewModel.CaptureStatusMessage);
+        Assert.True(viewModel.CanAnalyzeSnapshot);
+
+        viewModel.AnalyzeSnapshotCommand.Execute(null);
+
+        Assert.False(viewModel.HasCaptureError);
+        Assert.Equal(string.Empty, viewModel.CaptureErrorMessage);
+        Assert.Equal("Snapshot saved", viewModel.CaptureStatusMessage);
+        Assert.True(viewModel.CanAnalyzeSnapshot);
+        Assert.Equal(2, attempt);
+        await viewModel.DisconnectAsync();
+        await run;
+    }
+
+    [Fact]
     public async Task DisconnectCancelsAndAwaitsAnActiveCapture()
     {
         var session = new StubSession(waitForCancellation: true);
