@@ -1,8 +1,10 @@
 using System.Collections.Specialized;
 using System.Runtime.CompilerServices;
+using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels;
 using MemoryProfiler.Contracts.Live;
 using MemoryProfiler.Contracts.Processes;
+using MemoryProfiler.Diagnostics.Dumps;
 using MemoryProfiler.Diagnostics.Processes;
 using MemoryProfiler.Diagnostics.Sessions;
 using Xunit;
@@ -304,6 +306,33 @@ public sealed class StartViewModelTests
         Assert.False(start.IsLiveSessionVisible);
     }
 
+    [Fact]
+    public async Task StartingLiveSessionSuppliesDumpCaptureDependencies()
+    {
+        var discovery = StubDiscovery.Returning(
+            new ProcessInfo(4217, "SampleService", "10.0.0"));
+        using var picker = new ProcessPickerViewModel(discovery);
+        var session = new BlockingLiveSession();
+        var capture = new RecordingDumpCaptureService();
+        await using var start = new StartViewModel(
+            picker,
+            new StubLiveSessionFactory(session),
+            ImmediateUiDispatcher.Instance,
+            capture,
+            new StubDumpDestinationPicker(Path.GetTempPath()));
+        await picker.RefreshAsync();
+        picker.SelectedProcess = Assert.Single(picker.Processes);
+
+        var liveRun = start.StartLiveSessionAsync();
+        await session.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await start.LiveSession!.CaptureSnapshotAsync();
+
+        Assert.Equal(4217, capture.ProcessId);
+        Assert.Equal(Path.GetTempPath(), capture.DestinationDirectory);
+        await start.CloseLiveSessionAsync();
+        await liveRun;
+    }
+
     private sealed class StubDiscovery(
         Func<CancellationToken, Task<IReadOnlyList<ProcessInfo>>> discover) : IDotNetProcessDiscovery
     {
@@ -348,5 +377,53 @@ public sealed class StartViewModelTests
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class BlockingLiveSession : ILiveDiagnosticsSession
+    {
+        public int ProcessId => 4217;
+
+        public TaskCompletionSource Started { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async IAsyncEnumerable<MemoryMetrics> ObserveMemoryAsync(
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            Started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            yield break;
+        }
+
+        public async IAsyncEnumerable<GcEvent> ObserveGcEventsAsync(
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            yield break;
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class StubDumpDestinationPicker(string? directory)
+        : IDumpDestinationPicker
+    {
+        public Task<string?> PickAsync() => Task.FromResult(directory);
+    }
+
+    private sealed class RecordingDumpCaptureService : IDumpCaptureService
+    {
+        public int ProcessId { get; private set; }
+
+        public string? DestinationDirectory { get; private set; }
+
+        public Task<string> CaptureAsync(
+            int processId,
+            string destinationDirectory,
+            CancellationToken cancellationToken = default)
+        {
+            ProcessId = processId;
+            DestinationDirectory = destinationDirectory;
+            return Task.FromResult(Path.Combine(destinationDirectory, "snapshot.dmp"));
+        }
     }
 }

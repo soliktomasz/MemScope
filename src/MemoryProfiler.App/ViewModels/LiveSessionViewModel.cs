@@ -1,8 +1,10 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
+using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels.Overview;
 using MemoryProfiler.App.ViewModels.GcTimeline;
 using MemoryProfiler.Contracts.Live;
+using MemoryProfiler.Diagnostics.Dumps;
 using MemoryProfiler.Diagnostics.Sessions;
 
 namespace MemoryProfiler.App.ViewModels;
@@ -18,16 +20,27 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
     private readonly ObservableCollection<MemoryMetrics> _metricHistory = [];
     private readonly CancellationTokenSource _sessionCancellation = new();
     private readonly object _lifecycleGate = new();
+    private readonly object _captureGate = new();
     private readonly AsyncCommand _disconnectCommand;
     private readonly AsyncCommand _closeCommand;
+    private readonly AsyncCommand _captureSnapshotCommand;
+    private readonly RelayCommand _cancelCaptureCommand;
+    private readonly IDumpCaptureService? _dumpCaptureService;
+    private readonly IDumpDestinationPicker? _dumpDestinationPicker;
     private ILiveDiagnosticsSession? _session;
     private Task? _runTask;
     private Task? _disposeTask;
+    private Task? _captureTask;
+    private CancellationTokenSource? _captureCancellation;
     private bool _isConnecting;
     private bool _isLive;
     private bool _isDisconnected;
     private bool _hasMetrics;
     private string? _errorMessage;
+    private bool _isCapturing;
+    private string _captureStatusMessage = string.Empty;
+    private string _captureErrorMessage = string.Empty;
+    private string _capturedDumpPath = string.Empty;
     private int _disposed;
 
     internal LiveSessionViewModel(
@@ -37,7 +50,9 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         IUiDispatcher uiDispatcher,
         int maximumMetricSamples = MaximumMetricSamples,
         int maximumGcEvents = MaximumGcEvents,
-        Func<Task>? closeSession = null)
+        Func<Task>? closeSession = null,
+        IDumpCaptureService? dumpCaptureService = null,
+        IDumpDestinationPicker? dumpDestinationPicker = null)
     {
         if (processId <= 0)
         {
@@ -62,12 +77,18 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         _sessionFactory = sessionFactory;
         _uiDispatcher = uiDispatcher;
         _maximumMetricSamples = maximumMetricSamples;
+        _dumpCaptureService = dumpCaptureService;
+        _dumpDestinationPicker = dumpDestinationPicker;
         MetricHistory = new ReadOnlyObservableCollection<MemoryMetrics>(_metricHistory);
         GcTimeline = new GcTimelineViewModel(maximumGcEvents);
         _disconnectCommand = new AsyncCommand(DisconnectAsync, () => IsConnecting || IsLive);
         _closeCommand = new AsyncCommand(
             closeSession ?? DisconnectAsync,
             () => IsDisconnected || HasError);
+        _captureSnapshotCommand = new AsyncCommand(
+            CaptureSnapshotAsync,
+            () => CanCaptureSnapshot);
+        _cancelCaptureCommand = new RelayCommand(CancelCapture, () => IsCapturing);
     }
 
     public int ProcessId { get; }
@@ -89,6 +110,64 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
     public ICommand DisconnectCommand => _disconnectCommand;
 
     public ICommand CloseCommand => _closeCommand;
+
+    public ICommand CaptureSnapshotCommand => _captureSnapshotCommand;
+
+    public ICommand CancelCaptureCommand => _cancelCaptureCommand;
+
+    public bool IsCapturing
+    {
+        get => _isCapturing;
+        private set
+        {
+            if (SetProperty(ref _isCapturing, value))
+            {
+                OnPropertyChanged(nameof(CanCaptureSnapshot));
+                _captureSnapshotCommand.NotifyCanExecuteChanged();
+                _cancelCaptureCommand.NotifyCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool CanCaptureSnapshot =>
+        IsLive &&
+        !IsCapturing &&
+        _dumpCaptureService is not null &&
+        _dumpDestinationPicker is not null;
+
+    public bool HasCaptureStatus => CaptureStatusMessage.Length > 0;
+
+    public string CaptureStatusMessage
+    {
+        get => _captureStatusMessage;
+        private set
+        {
+            if (SetProperty(ref _captureStatusMessage, value))
+            {
+                OnPropertyChanged(nameof(HasCaptureStatus));
+            }
+        }
+    }
+
+    public bool HasCaptureError => CaptureErrorMessage.Length > 0;
+
+    public string CaptureErrorMessage
+    {
+        get => _captureErrorMessage;
+        private set
+        {
+            if (SetProperty(ref _captureErrorMessage, value))
+            {
+                OnPropertyChanged(nameof(HasCaptureError));
+            }
+        }
+    }
+
+    public string CapturedDumpPath
+    {
+        get => _capturedDumpPath;
+        private set => SetProperty(ref _capturedDumpPath, value);
+    }
 
     public bool IsConnecting
     {
@@ -234,6 +313,7 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
             return;
         }
 
+        var captureTask = CancelActiveCapture();
         await _sessionCancellation.CancelAsync().ConfigureAwait(false);
         Task? runTask;
         lock (_lifecycleGate)
@@ -249,6 +329,91 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         {
             await PublishAsync(SetDisconnected).ConfigureAwait(false);
         }
+
+        if (captureTask is not null)
+        {
+            await captureTask.ConfigureAwait(false);
+        }
+    }
+
+    public async Task CaptureSnapshotAsync()
+    {
+        if (Volatile.Read(ref _disposed) != 0 ||
+            !IsLive ||
+            _dumpCaptureService is null ||
+            _dumpDestinationPicker is null)
+        {
+            return;
+        }
+
+        string? destinationDirectory;
+        try
+        {
+            destinationDirectory = await _dumpDestinationPicker.PickAsync();
+        }
+        catch (Exception exception)
+        {
+            await PublishAsync(() =>
+            {
+                CapturedDumpPath = string.Empty;
+                CaptureStatusMessage = string.Empty;
+                CaptureErrorMessage = $"Unable to choose a snapshot destination. {exception.Message}";
+            }).ConfigureAwait(false);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(destinationDirectory))
+        {
+            return;
+        }
+
+        CancellationTokenSource captureCancellation;
+        Task captureTask;
+        lock (_captureGate)
+        {
+            if (Volatile.Read(ref _disposed) != 0 ||
+                _captureTask is not null ||
+                !CanCaptureSnapshot)
+            {
+                return;
+            }
+
+            captureCancellation = new CancellationTokenSource();
+            _captureCancellation = captureCancellation;
+            captureTask = CaptureCoreAsync(
+                destinationDirectory,
+                captureCancellation.Token);
+            _captureTask = captureTask;
+        }
+
+        try
+        {
+            await captureTask.ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_captureGate)
+            {
+                if (ReferenceEquals(_captureTask, captureTask))
+                {
+                    _captureTask = null;
+                    _captureCancellation = null;
+                }
+            }
+
+            captureCancellation.Dispose();
+        }
+    }
+
+    public void CancelCapture()
+    {
+        CancellationTokenSource? cancellation;
+        lock (_captureGate)
+        {
+            cancellation = _captureCancellation;
+        }
+
+        RequestCancellation(cancellation);
     }
 
     public ValueTask DisposeAsync()
@@ -268,6 +433,7 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
 
     private async Task DisposeCoreAsync(Task? runTask)
     {
+        var captureTask = CancelActiveCapture();
         await _sessionCancellation.CancelAsync().ConfigureAwait(false);
         if (runTask is not null)
         {
@@ -278,7 +444,80 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
             await DisposeSessionAsync().ConfigureAwait(false);
         }
 
+        if (captureTask is not null)
+        {
+            await captureTask.ConfigureAwait(false);
+        }
+
         _sessionCancellation.Dispose();
+    }
+
+    private async Task CaptureCoreAsync(
+        string destinationDirectory,
+        CancellationToken cancellationToken)
+    {
+        await PublishAsync(() =>
+        {
+            CapturedDumpPath = string.Empty;
+            CaptureErrorMessage = string.Empty;
+            CaptureStatusMessage = "Capturing snapshot";
+            IsCapturing = true;
+        }).ConfigureAwait(false);
+
+        try
+        {
+            var path = await _dumpCaptureService!
+                .CaptureAsync(ProcessId, destinationDirectory, cancellationToken)
+                .ConfigureAwait(false);
+            await PublishAsync(() =>
+            {
+                CapturedDumpPath = path;
+                CaptureStatusMessage = "Snapshot saved";
+            }).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            await PublishAsync(() => CaptureStatusMessage = string.Empty)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            await PublishAsync(() =>
+            {
+                CaptureStatusMessage = string.Empty;
+                CaptureErrorMessage = $"Unable to capture snapshot. {exception.Message}";
+            }).ConfigureAwait(false);
+        }
+        finally
+        {
+            await PublishAsync(() => IsCapturing = false).ConfigureAwait(false);
+        }
+    }
+
+    private Task? CancelActiveCapture()
+    {
+        CancellationTokenSource? cancellation;
+        Task? captureTask;
+        lock (_captureGate)
+        {
+            cancellation = _captureCancellation;
+            captureTask = _captureTask;
+        }
+
+        RequestCancellation(cancellation);
+        return captureTask;
+    }
+
+    private static void RequestCancellation(CancellationTokenSource? cancellation)
+    {
+        try
+        {
+            cancellation?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Capture completion won the race and already retired this source.
+        }
     }
 
     private async Task PublishAsync(Action action)
@@ -319,6 +558,8 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         {
             _disconnectCommand.NotifyCanExecuteChanged();
             _closeCommand.NotifyCanExecuteChanged();
+            _captureSnapshotCommand.NotifyCanExecuteChanged();
+            OnPropertyChanged(nameof(CanCaptureSnapshot));
             OnPropertyChanged(nameof(IsAwaitingMetrics));
         }
     }

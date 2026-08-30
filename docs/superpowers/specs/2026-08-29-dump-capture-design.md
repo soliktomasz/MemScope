@@ -60,11 +60,11 @@ public interface IDumpCaptureService
 
 `DumpCaptureService` validates a positive process ID and a nonblank destination directory. It resolves the process name, sanitizes invalid filename characters, and falls back to `process-{pid}` if no usable name remains. It creates the destination directory when necessary.
 
-The base filename is `<process>-yyyy-MM-dd-HHmmss.dmp`, using local time to match the user-facing example. If that path already exists, numeric suffixes such as `-2` and `-3` are tried until an unused path is found. A small internal environment seam owns process-name lookup, clock access, file existence, directory creation, and deletion so filename and cleanup behavior remain deterministic in tests. Internal types stay in `DumpCaptureService.cs` to keep the public diagnostics surface to the two requested files.
+The base filename is `<process>-yyyy-MM-dd-HHmmss.dmp`, using local time to match the user-facing example. If that path already exists, numeric suffixes such as `-2` and `-3` are tried until an unused path is found. A small internal environment seam owns process-name lookup, clock access, temporary-path reservation, atomic moves, directory creation, and deletion so filename and cleanup behavior remain deterministic in tests. Internal types stay in `DumpCaptureService.cs` to keep the public diagnostics surface to the two requested files.
 
-The service calls `DiagnosticsClient.WriteDumpAsync` with `DumpType.WithHeap`, `WriteDumpFlags.None`, the selected output path, and the caller's cancellation token. `WithHeap` is the smallest official dump type intended to include the GC heaps needed by ClrMD. The async diagnostics API keeps the operation off the UI thread and observes cancellation.
+The service reserves an application-owned random temporary path in the destination directory, then calls `DiagnosticsClient.WriteDumpAsync` with `DumpType.WithHeap`, `WriteDumpFlags.None`, that temporary path, and the caller's cancellation token. `WithHeap` is the smallest official dump type intended to include the GC heaps needed by ClrMD. The async diagnostics API keeps the operation off the UI thread and observes cancellation.
 
-The selected final path is treated as incomplete until `WriteDumpAsync` returns successfully. Any exception, including cancellation, triggers a best-effort deletion of that path before the original exception is rethrown. Cleanup failure must not hide the capture failure.
+After capture succeeds, the service atomically moves the owned temporary file to the first available timestamped final name without overwrite. If another process claims a candidate name first, the service retries with the next numeric suffix. Any exception, including cancellation, triggers best-effort deletion of only the owned temporary file before the original exception is rethrown. Cleanup failure must not hide the capture failure, and cleanup must never delete a competing capture's final file.
 
 ## Application Architecture
 
@@ -99,7 +99,7 @@ No decorative animation is added. The state transition itself supplies feedback,
 1. The user selects **Capture Snapshot** while connected.
 2. The native folder picker returns a destination or is dismissed.
 3. `LiveSessionViewModel` enters capturing state and passes the process ID, destination, and capture token to `IDumpCaptureService`.
-4. `DumpCaptureService` chooses an unused sanitized filename and requests a `WithHeap` dump through `DiagnosticsClient.WriteDumpAsync`.
+4. `DumpCaptureService` requests a `WithHeap` dump into an owned temporary file, then atomically moves it to an unused sanitized final filename.
 5. On success, the service returns the absolute path and the view model publishes it to the Live Session.
 6. On cancellation or failure, the service deletes incomplete output. The view model distinguishes user cancellation from actionable errors.
 
@@ -120,7 +120,7 @@ Diagnostics unit tests use the internal environment and dump-writer seams to ver
 - `DumpType.WithHeap`, destination path, and cancellation-token forwarding;
 - process-name sanitization and fallback naming;
 - deterministic timestamp formatting;
-- collision suffixes and no overwrite;
+- atomic collision suffix retries and no overwrite;
 - successful absolute-path return;
 - deletion of partial output after failure and cancellation;
 - preservation of the original exception if deletion also fails.
@@ -142,4 +142,3 @@ The diagnostics acceptance test starts the existing `LiveDiagnosticsTarget`, cap
 
 - [Microsoft diagnostics client library](https://learn.microsoft.com/en-us/dotnet/core/diagnostics/diagnostics-client-library)
 - [DiagnosticsClient source](https://github.com/dotnet/diagnostics/blob/main/src/Microsoft.Diagnostics.NETCore.Client/DiagnosticsClient/DiagnosticsClient.cs)
-
