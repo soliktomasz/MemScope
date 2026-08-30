@@ -211,6 +211,9 @@ public sealed class ClrMdHeapSnapshotLoaderTests
             ulong targetAddress,
             CancellationToken cancellationToken) => [];
 
+        public IEnumerable<ClrRootData> EnumerateRoots(
+            CancellationToken cancellationToken) => [];
+
         public void Dispose() => Disposed = true;
     }
 }

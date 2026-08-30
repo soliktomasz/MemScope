@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
+using MemoryProfiler.Analysis.Roots;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels;
 using MemoryProfiler.Contracts.Heap;
@@ -346,6 +347,23 @@ public sealed class StartViewModelTests
     }
 
     [Fact]
+    public async Task OpenDumpIsDisabledWithoutTheGcRootService()
+    {
+        using var start = new StartViewModel(
+            new ProcessPickerViewModel(StubDiscovery.Returning()),
+            new StubLiveSessionFactory(new StubLiveSession()),
+            ImmediateUiDispatcher.Instance,
+            new RecordingDumpCaptureService(),
+            new StubDumpDestinationPicker(Path.GetTempPath()),
+            new StubHeapSnapshotLoader(SampleSnapshot()),
+            new StubDumpFilePicker("/tmp/sample.dmp"),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]));
+
+        Assert.False(start.OpenDumpCommand.CanExecute(null));
+    }
+
+    [Fact]
     public async Task OpenDumpPickerCancellationLeavesTheStartScreenUnchanged()
     {
         using var start = new StartViewModel(
@@ -357,7 +375,8 @@ public sealed class StartViewModelTests
             new StubHeapSnapshotLoader(SampleSnapshot()),
             new StubDumpFilePicker(null),
             new StubHeapObjectRepository([]),
-            new StubObjectReferenceService([]));
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]));
 
         await start.OpenDumpAsync();
 
@@ -380,7 +399,8 @@ public sealed class StartViewModelTests
             loader,
             new StubDumpFilePicker("/tmp/sample.dmp"),
             new StubHeapObjectRepository([]),
-            new StubObjectReferenceService([]));
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]));
 
         await start.OpenDumpAsync();
 
@@ -404,7 +424,8 @@ public sealed class StartViewModelTests
             new StubHeapSnapshotLoader(SampleSnapshot()),
             new ThrowingDumpFilePicker(new IOException("Picker unavailable.")),
             new StubHeapObjectRepository([]),
-            new StubObjectReferenceService([]));
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]));
 
         await start.OpenDumpAsync();
 
@@ -429,7 +450,8 @@ public sealed class StartViewModelTests
             loader,
             new StubDumpFilePicker("/tmp/sample.dmp"),
             new StubHeapObjectRepository([]),
-            new StubObjectReferenceService([]));
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]));
 
         await start.OpenDumpAsync();
 
@@ -459,7 +481,8 @@ public sealed class StartViewModelTests
             new StubHeapSnapshotLoader(SampleSnapshot()),
             new StubDumpFilePicker(null),
             new StubHeapObjectRepository([]),
-            new StubObjectReferenceService([]));
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]));
         await picker.RefreshAsync();
         picker.SelectedProcess = Assert.Single(picker.Processes);
         var liveRun = start.StartLiveSessionAsync();
@@ -498,7 +521,8 @@ public sealed class StartViewModelTests
                     new InvalidDataException("Not a dump."))),
             new StubDumpFilePicker(null),
             new StubHeapObjectRepository([]),
-            new StubObjectReferenceService([]));
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]));
         await picker.RefreshAsync();
         picker.SelectedProcess = Assert.Single(picker.Processes);
         var liveRun = start.StartLiveSessionAsync();
@@ -526,7 +550,8 @@ public sealed class StartViewModelTests
             new StubHeapSnapshotLoader(SampleSnapshot()),
             new StubDumpFilePicker(null),
             new StubHeapObjectRepository([]),
-            new StubObjectReferenceService([]));
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]));
 
         await start.AnalyzeCapturedDumpAsync(string.Empty);
 
@@ -703,5 +728,14 @@ public sealed class StartViewModelTests
             ulong objectAddress,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(references);
+    }
+
+    private sealed class StubGcRootService(IReadOnlyList<GcRootInfo> roots) : IGcRootService
+    {
+        public Task<IReadOnlyList<GcRootInfo>> FindRootsAsync(
+            HeapSnapshot snapshot,
+            ulong objectAddress,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(roots);
     }
 }

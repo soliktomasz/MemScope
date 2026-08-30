@@ -2,6 +2,7 @@ using System.Globalization;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
+using MemoryProfiler.Analysis.Roots;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels.Objects;
 using MemoryProfiler.App.ViewModels;
@@ -38,6 +39,7 @@ public sealed class SnapshotViewModelTests
             loader,
             new StubHeapObjectRepository([]),
             new StubObjectReferenceService([]),
+            new StubGcRootService([]),
             ImmediateUiDispatcher.Instance);
 
         await viewModel.LoadAsync("sample.dmp");
@@ -73,6 +75,7 @@ public sealed class SnapshotViewModelTests
             loader,
             new StubHeapObjectRepository([]),
             new StubObjectReferenceService([]),
+            new StubGcRootService([]),
             ImmediateUiDispatcher.Instance);
 
         var load = viewModel.LoadAsync("sample.dmp");
@@ -101,6 +104,7 @@ public sealed class SnapshotViewModelTests
             loader,
             new StubHeapObjectRepository([]),
             new StubObjectReferenceService([]),
+            new StubGcRootService([]),
             ImmediateUiDispatcher.Instance);
 
         await viewModel.LoadAsync("sample.dmp");
@@ -129,6 +133,7 @@ public sealed class SnapshotViewModelTests
             loader,
             new StubHeapObjectRepository([]),
             new StubObjectReferenceService([]),
+            new StubGcRootService([]),
             ImmediateUiDispatcher.Instance);
 
         using var cancellation = new CancellationTokenSource();
@@ -154,6 +159,7 @@ public sealed class SnapshotViewModelTests
             loader,
             new StubHeapObjectRepository([]),
             new StubObjectReferenceService([]),
+            new StubGcRootService([]),
             ImmediateUiDispatcher.Instance,
             close: () =>
             {
@@ -181,7 +187,7 @@ public sealed class SnapshotViewModelTests
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
                 throw new OperationCanceledException(cancellationToken);
             });
-        var viewModel = new SnapshotViewModel(loader, new StubHeapObjectRepository([]), new StubObjectReferenceService([]), ImmediateUiDispatcher.Instance);
+        var viewModel = new SnapshotViewModel(loader, new StubHeapObjectRepository([]), new StubObjectReferenceService([]), new StubGcRootService([]), ImmediateUiDispatcher.Instance);
 
         var load = viewModel.LoadAsync("sample.dmp");
         await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -203,6 +209,7 @@ public sealed class SnapshotViewModelTests
                 Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
             repository,
             new StubObjectReferenceService([]),
+            new StubGcRootService([]),
             ImmediateUiDispatcher.Instance);
         await viewModel.LoadAsync("sample.dmp");
 
@@ -227,6 +234,7 @@ public sealed class SnapshotViewModelTests
                 Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
             repository,
             new StubObjectReferenceService([]),
+            new StubGcRootService([]),
             ImmediateUiDispatcher.Instance);
         await viewModel.LoadAsync("sample.dmp");
 
@@ -259,6 +267,7 @@ public sealed class SnapshotViewModelTests
                 Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
             repository,
             new StubObjectReferenceService([]),
+            new StubGcRootService([]),
             ImmediateUiDispatcher.Instance);
         await viewModel.LoadAsync("sample.dmp");
 
@@ -284,6 +293,7 @@ public sealed class SnapshotViewModelTests
             new StubHeapObjectRepository(
                 [new HeapObjectInfo(0x1000, 0x1000, "System.String", 24, "Gen0")]),
             referenceService,
+            new StubGcRootService([]),
             ImmediateUiDispatcher.Instance);
         await viewModel.LoadAsync("sample.dmp");
         viewModel.Types.SelectedType = viewModel.Types.FilteredTypes.Single();
@@ -313,6 +323,7 @@ public sealed class SnapshotViewModelTests
             new StubHeapObjectRepository(
                 [new HeapObjectInfo(0x1000, 0x1000, "System.String", 24, "Gen0")]),
             referenceService,
+            new StubGcRootService([]),
             ImmediateUiDispatcher.Instance);
         await viewModel.LoadAsync("sample.dmp");
         viewModel.Types.SelectedType = viewModel.Types.FilteredTypes.Single();
@@ -327,6 +338,93 @@ public sealed class SnapshotViewModelTests
     }
 
     [Fact]
+    public async Task ShowPathToRootCommandRoutesAnInstanceRowToTheGcRootsPane()
+    {
+        var gcRootService = new StubGcRootService(
+        [
+            new GcRootInfo(0x1000, 0x1000, "Static field", "MyApp.Program._cache", Path: null),
+        ]);
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(
+                Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
+            new StubHeapObjectRepository(
+                [new HeapObjectInfo(0x1000, 0x1000, "System.String", 24, "Gen0")]),
+            new StubObjectReferenceService([]),
+            gcRootService,
+            ImmediateUiDispatcher.Instance);
+        await viewModel.LoadAsync("sample.dmp");
+        viewModel.Types.SelectedType = viewModel.Types.FilteredTypes.Single();
+        var instanceRow = Assert.Single(viewModel.ObjectInstances.Instances);
+
+        Assert.True(viewModel.ShowPathToRootCommand.CanExecute(instanceRow));
+        viewModel.ShowPathToRootCommand.Execute(instanceRow);
+
+        Assert.True(viewModel.GcRoots.HasSelection);
+        Assert.True(viewModel.GcRoots.ShowTable);
+        Assert.Equal("System.String", viewModel.GcRoots.ObjectTypeName);
+        Assert.Equal("0x000000001000", viewModel.GcRoots.AddressDisplay);
+        Assert.Equal("1 path to root", viewModel.GcRoots.SummaryDisplay);
+        Assert.Equal(2, viewModel.GcRoots.Rows.Count);
+    }
+
+    [Fact]
+    public async Task ShowPathToRootCommandRoutesAPathRowEndpointBackToTheReferencesPane()
+    {
+        var referenceService = new StubObjectReferenceService(
+            [new ObjectReference(0x3000, 0x4000, ReferenceKind.Field, "_child",
+                "MyApp.Owner", "MyApp.Widget")],
+            []);
+        var gcRootService = new StubGcRootService(
+        [
+            new GcRootInfo(0x2000, 0x1000, "Static field", "MyApp.Program._cache",
+            [
+                new ObjectReference(0x2000, 0x3000, ReferenceKind.Field, "_owner",
+                    "MyApp.Cache", "MyApp.Owner"),
+                new ObjectReference(0x3000, 0x1000, ReferenceKind.Field, "_target",
+                    "MyApp.Owner", "System.String"),
+            ]),
+        ]);
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(
+                Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
+            new StubHeapObjectRepository(
+                [new HeapObjectInfo(0x1000, 0x1000, "System.String", 24, "Gen0")]),
+            referenceService,
+            gcRootService,
+            ImmediateUiDispatcher.Instance);
+        await viewModel.LoadAsync("sample.dmp");
+        viewModel.Types.SelectedType = viewModel.Types.FilteredTypes.Single();
+        var instanceRow = Assert.Single(viewModel.ObjectInstances.Instances);
+
+        viewModel.ShowPathToRootCommand.Execute(instanceRow);
+        // The hop row for the intermediate object, not the inspected target.
+        var ownerRow = Assert.Single(
+            viewModel.GcRoots.Rows, row => row.EndpointAddress == 0x3000);
+        Assert.Equal("MyApp.Owner", ownerRow.EndpointTypeName);
+
+        // Inspecting a node in the path routes back through the references pane.
+        viewModel.ShowOutgoingReferencesCommand.Execute(ownerRow);
+
+        Assert.Equal("MyApp.Owner", viewModel.ObjectReferences.ObjectTypeName);
+        Assert.Equal("0x000000003000", viewModel.ObjectReferences.AddressDisplay);
+        Assert.Equal(ReferenceDirection.Outgoing, viewModel.ObjectReferences.Direction);
+    }
+
+    [Fact]
+    public async Task ShowPathToRootCommandIsDisabledWithoutASnapshot()
+    {
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(
+                Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            ImmediateUiDispatcher.Instance);
+
+        Assert.False(viewModel.ShowPathToRootCommand.CanExecute(null));
+    }
+
+    [Fact]
     public async Task ReferenceRowNavigationDrillsIntoTheObjectAtTheOtherEnd()
     {
         var referenceService = new StubObjectReferenceService(
@@ -338,6 +436,7 @@ public sealed class SnapshotViewModelTests
                 Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
             new StubHeapObjectRepository([]),
             referenceService,
+            new StubGcRootService([]),
             ImmediateUiDispatcher.Instance);
         await viewModel.LoadAsync("sample.dmp");
 
@@ -365,6 +464,7 @@ public sealed class SnapshotViewModelTests
             new StubHeapObjectRepository(
                 [new HeapObjectInfo(0x1000, 0x1000, "System.String", 24, "Gen0")]),
             referenceService,
+            new StubGcRootService([]),
             ImmediateUiDispatcher.Instance);
         await viewModel.LoadAsync("sample.dmp");
         viewModel.Types.SelectedType = viewModel.Types.FilteredTypes.Single();
@@ -394,6 +494,7 @@ public sealed class SnapshotViewModelTests
                 Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
             new StubHeapObjectRepository([]),
             referenceService,
+            new StubGcRootService([]),
             ImmediateUiDispatcher.Instance);
         await viewModel.LoadAsync("sample.dmp");
         viewModel.ShowOutgoingReferencesCommand.Execute(
@@ -507,5 +608,15 @@ public sealed class SnapshotViewModelTests
             ulong objectAddress,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(_incoming);
+    }
+
+    private sealed class StubGcRootService(
+        IReadOnlyList<GcRootInfo> roots) : IGcRootService
+    {
+        public Task<IReadOnlyList<GcRootInfo>> FindRootsAsync(
+            HeapSnapshot snapshot,
+            ulong objectAddress,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(roots);
     }
 }

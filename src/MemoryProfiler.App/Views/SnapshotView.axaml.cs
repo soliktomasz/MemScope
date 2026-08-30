@@ -20,4 +20,13 @@ public partial class SnapshotView : UserControl
             viewModel.ShowOutgoingReferences(row);
         }
     }
+
+    private void OnPathsListDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (e.Source is Control { DataContext: GcRootRowViewModel { CanNavigate: true } row } &&
+            DataContext is SnapshotViewModel viewModel)
+        {
+            viewModel.ShowOutgoingReferences(row);
+        }
+    }
 }

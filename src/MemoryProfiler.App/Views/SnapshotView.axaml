@@ -89,6 +89,16 @@
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
     </Style>
+    <Style Selector="ListBox.path-list">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="ListBox.path-list ListBoxItem">
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
+    </Style>
     <Style Selector="Button.direction-button">
       <Setter Property="MinHeight" Value="26" />
       <Setter Property="Padding" Value="12,3" />
@@ -372,7 +382,7 @@
                     Background="{DynamicResource AppBorderBrush}" />
 
       <Grid Grid.Row="2"
-            ColumnDefinitions="*,6,*">
+            ColumnDefinitions="*,6,*,6,*">
         <Border Grid.Column="0"
                 MinHeight="150"
                 MinWidth="300"
@@ -493,6 +503,9 @@
                             CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
                   <MenuItem Header="Show Incoming References"
                             Command="{Binding ShowIncomingReferencesCommand}"
+                            CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
+                  <MenuItem Header="Show Path to Root"
+                            Command="{Binding ShowPathToRootCommand}"
                             CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
                 </ContextMenu>
               </ListBox.ContextMenu>
@@ -676,6 +689,9 @@
                   <MenuItem Header="Show Incoming References"
                             Command="{Binding ShowIncomingReferencesCommand}"
                             CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
+                  <MenuItem Header="Show Path to Root"
+                            Command="{Binding ShowPathToRootCommand}"
+                            CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
                 </ContextMenu>
               </ListBox.ContextMenu>
               <ListBox.ItemsPanel>
@@ -694,6 +710,194 @@
                                TextTrimming="CharacterEllipsis"
                                ToolTip.Tip="{Binding FieldDisplay}"
                                Foreground="{DynamicResource AppTextPrimaryBrush}"
+                               Text="{Binding FieldDisplay}" />
+                    <TextBlock Grid.Column="1"
+                               VerticalAlignment="Center"
+                               Classes="secondary"
+                               Text="{Binding KindDisplay}" />
+                    <TextBlock Grid.Column="2"
+                               VerticalAlignment="Center"
+                               Classes="mono-data"
+                               Text="{Binding AddressDisplay}" />
+                    <TextBlock Grid.Column="3"
+                               Margin="0,0,8,0"
+                               VerticalAlignment="Center"
+                               Classes="secondary"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="{Binding TypeNameDisplay}"
+                               Text="{Binding TypeNameDisplay}" />
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Grid>
+        </Grid>
+      </Border>
+
+      <GridSplitter Grid.Column="3"
+                    Width="6"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch"
+                    Background="{DynamicResource AppBorderBrush}" />
+
+      <Border Grid.Column="4"
+              MinHeight="150"
+              MinWidth="300"
+              BorderBrush="{DynamicResource AppBorderBrush}"
+              BorderThickness="1"
+              CornerRadius="{DynamicResource AppCornerRadius}"
+              Padding="14,10">
+        <Grid RowDefinitions="Auto,Auto,*"
+              RowSpacing="8">
+          <Grid Grid.Row="0"
+                ColumnDefinitions="*,Auto"
+                ColumnSpacing="16">
+            <StackPanel Spacing="2">
+              <TextBlock Classes="section-label" Text="PATH TO ROOT" />
+              <TextBlock MaxWidth="420"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource AppTextPrimaryBrush}"
+                         TextTrimming="CharacterEllipsis"
+                         ToolTip.Tip="{Binding GcRoots.ObjectTypeName}"
+                         Text="{Binding GcRoots.ObjectTypeName}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Bottom"
+                        Spacing="12">
+              <TextBlock Classes="secondary"
+                         FontSize="12"
+                         VerticalAlignment="Center"
+                         Text="{Binding GcRoots.AddressDisplay}" />
+              <TextBlock Classes="secondary"
+                         FontSize="12"
+                         VerticalAlignment="Center"
+                         Text="{Binding GcRoots.SummaryDisplay}" />
+              <ProgressBar Width="140"
+                           Height="2"
+                           IsIndeterminate="True"
+                           IsVisible="{Binding GcRoots.ShowLoading}"
+                           AutomationProperties.Name="Loading paths to root"
+                           AutomationProperties.LiveSetting="Polite" />
+            </StackPanel>
+          </Grid>
+
+          <Grid Grid.Row="1"
+                IsVisible="{Binding GcRoots.ShowTable}"
+                ColumnDefinitions="*,120,140,*"
+                ColumnSpacing="8"
+                Background="{DynamicResource AppSurfaceSubtleBrush}">
+            <TextBlock Grid.Column="0" Classes="table-header" Text="Field" />
+            <TextBlock Grid.Column="1" Classes="table-header" Text="Kind" />
+            <TextBlock Grid.Column="2" Classes="table-header" Text="Address" />
+            <TextBlock Grid.Column="3" Classes="table-header" Text="Type" />
+          </Grid>
+
+          <Grid Grid.Row="2">
+            <StackPanel IsVisible="{Binding GcRoots.ShowIdle}"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Margin="0,12"
+                        Spacing="6">
+              <TextBlock HorizontalAlignment="Center"
+                         Classes="secondary"
+                         Text="Select an object and choose Show Path to Root" />
+            </StackPanel>
+
+            <StackPanel IsVisible="{Binding GcRoots.ShowLoading}"
+                        Margin="0,8"
+                        Spacing="10">
+              <Grid ColumnDefinitions="*,120,140,*" ColumnSpacing="8">
+                <Border Grid.Column="0" Classes="skeleton" />
+                <Border Grid.Column="1" Classes="skeleton" />
+                <Border Grid.Column="2" Classes="skeleton" />
+                <Border Grid.Column="3" Classes="skeleton" />
+              </Grid>
+              <Grid ColumnDefinitions="*,120,140,*" ColumnSpacing="8">
+                <Border Grid.Column="0" Classes="skeleton" />
+                <Border Grid.Column="1" Classes="skeleton" />
+                <Border Grid.Column="2" Classes="skeleton" />
+                <Border Grid.Column="3" Classes="skeleton" />
+              </Grid>
+              <Grid ColumnDefinitions="*,120,140,*" ColumnSpacing="8">
+                <Border Grid.Column="0" Classes="skeleton" />
+                <Border Grid.Column="1" Classes="skeleton" />
+                <Border Grid.Column="2" Classes="skeleton" />
+                <Border Grid.Column="3" Classes="skeleton" />
+              </Grid>
+            </StackPanel>
+
+            <Border IsVisible="{Binding GcRoots.ShowError}"
+                    Margin="0,6"
+                    Padding="12,9"
+                    CornerRadius="{DynamicResource AppCornerRadius}"
+                    AutomationProperties.Name="{Binding GcRoots.ErrorMessage}"
+                    AutomationProperties.LiveSetting="Assertive"
+                    Background="{DynamicResource AppErrorSurfaceBrush}">
+              <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
+                         FontSize="13"
+                         TextWrapping="Wrap"
+                         Text="{Binding GcRoots.ErrorMessage}" />
+            </Border>
+
+            <StackPanel IsVisible="{Binding GcRoots.ShowEmpty}"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Margin="0,12"
+                        Spacing="4">
+              <TextBlock HorizontalAlignment="Center"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource AppTextPrimaryBrush}"
+                         Text="No path to root" />
+              <TextBlock HorizontalAlignment="Center"
+                         Classes="secondary"
+                         Text="{Binding GcRoots.EmptyHint}" />
+            </StackPanel>
+
+            <ListBox Classes="path-list"
+                     IsVisible="{Binding GcRoots.ShowTable}"
+                     AutomationProperties.Name="Paths to root"
+                     ItemsSource="{Binding GcRoots.Rows}"
+                     DoubleTapped="OnPathsListDoubleTapped">
+              <ListBox.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="Show Outgoing References"
+                            Command="{Binding ShowOutgoingReferencesCommand}"
+                            CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
+                  <MenuItem Header="Show Incoming References"
+                            Command="{Binding ShowIncomingReferencesCommand}"
+                            CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
+                  <MenuItem Header="Show Path to Root"
+                            Command="{Binding ShowPathToRootCommand}"
+                            CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
+                </ContextMenu>
+              </ListBox.ContextMenu>
+              <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <VirtualizingStackPanel />
+                </ItemsPanelTemplate>
+              </ListBox.ItemsPanel>
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="objects:GcRootRowViewModel">
+                  <Grid ColumnDefinitions="*,120,140,*"
+                        ColumnSpacing="8"
+                        MinHeight="30">
+                    <TextBlock Grid.Column="0"
+                               Margin="{Binding IndentMargin}"
+                               VerticalAlignment="Center"
+                               IsVisible="{Binding IsRoot}"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource AppTextPrimaryBrush}"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="{Binding FieldDisplay}"
+                               Text="{Binding FieldDisplay}" />
+                    <TextBlock Grid.Column="0"
+                               Margin="{Binding IndentMargin}"
+                               VerticalAlignment="Center"
+                               IsVisible="{Binding IsRoot, Converter={x:Static BoolConverters.Not}}"
+                               Foreground="{DynamicResource AppTextPrimaryBrush}"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="{Binding FieldDisplay}"
                                Text="{Binding FieldDisplay}" />
                     <TextBlock Grid.Column="1"
                                VerticalAlignment="Center"

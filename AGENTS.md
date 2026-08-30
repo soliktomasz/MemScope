@@ -44,4 +44,4 @@ Tests mirror src under `tests/`: `MemoryProfiler.App.Tests` (view-model tests), 
 
 ## Notes
 
-- Full suite: 274 tests (140 app, 8 contracts, 60 analysis, 66 diagnostics) as of branch `11-task-12-object-references` — re-verify counts after changes.
+- Full suite: 316 tests (159 app, 10 contracts, 81 analysis, 66 diagnostics) as of branch `12-task-13-gc-roots-and-paths-to-root` — re-verify counts after changes.

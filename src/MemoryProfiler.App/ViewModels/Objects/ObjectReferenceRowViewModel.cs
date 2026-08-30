@@ -20,9 +20,10 @@ public sealed class ObjectReferenceRowViewModel
         EndpointAddress = direction == ReferenceDirection.Outgoing
             ? reference.TargetAddress
             : reference.SourceAddress;
-        EndpointTypeName = direction == ReferenceDirection.Outgoing
+        var endpointTypeName = direction == ReferenceDirection.Outgoing
             ? reference.TargetTypeName
             : reference.SourceTypeName;
+        EndpointTypeName = endpointTypeName ?? "N/A";
         FieldDisplay = reference.Name ??
                        (reference.Kind == ReferenceKind.ArrayElement
                            ? "array element"
@@ -51,7 +52,7 @@ public sealed class ObjectReferenceRowViewModel
 
     public ulong EndpointAddress { get; }
 
-    public string EndpointTypeName { get; }
+    public string EndpointTypeName { get; } = string.Empty;
 
     public string FieldDisplay { get; }
 

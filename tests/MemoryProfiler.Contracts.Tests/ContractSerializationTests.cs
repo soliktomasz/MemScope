@@ -16,6 +16,17 @@ public sealed class ContractSerializationTests
         new ObjectReference(0x2000, 0x3000, ReferenceKind.Field, "_child",
             "Example.Container", "Example.Widget"),
         new GcRootInfo(0x4000, 0x2000, "Stack", "main"),
+        new GcRootInfo(
+            0x4000,
+            0x3000,
+            "Static field",
+            "MyApp.Program._cache",
+            [
+                new ObjectReference(0x4000, 0x2000, ReferenceKind.Field, "_entries",
+                    "MyApp.Cache", "System.Collections.Generic.Dictionary"),
+                new ObjectReference(0x2000, 0x3000, ReferenceKind.Field, "_value",
+                    "System.Collections.Generic.Dictionary", "MyApp.CustomerDto"),
+            ]),
         new HeapSnapshotInfo("/tmp/example.dmp", "WorkerService", 42, "10.0.0",
             new DateTimeOffset(2026, 8, 28, 12, 0, 0, TimeSpan.Zero), 100, 8_192),
         new MemoryMetrics(new DateTimeOffset(2026, 8, 28, 12, 0, 1, TimeSpan.Zero),
@@ -33,5 +44,39 @@ public sealed class ContractSerializationTests
         var actual = JsonSerializer.Deserialize(json, expected.GetType());
 
         Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void GcRootInfoEqualityComparesPathsStructurally()
+    {
+        var left = new GcRootInfo(
+            0x4000,
+            0x3000,
+            "Static field",
+            "MyApp.Program._cache",
+            [
+                new ObjectReference(0x4000, 0x2000, ReferenceKind.Field, "_entries",
+                    "MyApp.Cache", "System.Collections.Generic.Dictionary"),
+            ]);
+        var right = new GcRootInfo(
+            0x4000,
+            0x3000,
+            "Static field",
+            "MyApp.Program._cache",
+            new List<ObjectReference>
+            {
+                new(0x4000, 0x2000, ReferenceKind.Field, "_entries",
+                    "MyApp.Cache", "System.Collections.Generic.Dictionary"),
+            });
+        var different = new GcRootInfo(
+            0x4000,
+            0x3000,
+            "Static field",
+            "MyApp.Program._cache",
+            []);
+
+        Assert.Equal(left, right);
+        Assert.Equal(left.GetHashCode(), right.GetHashCode());
+        Assert.NotEqual(left, different);
     }
 }
