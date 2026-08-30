@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="Inspect live .NET memory behavior and analyze managed heap dumps with MemScope."
+    >
+    <meta
+      name="theme-color"
+      content="#f5f7fa"
+      media="(prefers-color-scheme: light)"
+    >
+    <meta
+      name="theme-color"
+      content="#111318"
+      media="(prefers-color-scheme: dark)"
+    >
+    <meta property="og:title" content="MemScope - .NET memory profiler">
+    <meta
+      property="og:description"
+      content="Inspect live .NET memory behavior and analyze managed heap dumps."
+    >
+    <meta property="og:type" content="website">
+    <title>MemScope - .NET memory profiler</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+    <script type="module" src="script.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <header class="site-header">
+      <nav class="nav shell" aria-label="Primary navigation">
+        <a class="brand" href="./" aria-label="MemScope home">
+          <span aria-hidden="true">M</span>
+          MemScope
+        </a>
+        <details class="nav-menu">
+          <summary>Menu</summary>
+          <div class="nav-links">
+            <a href="#capabilities">Capabilities</a>
+            <a href="#get-started">Get started</a>
+            <a
+              class="button button-secondary"
+              href="https://github.com/soliktomasz/MemScope"
+            >View GitHub</a>
+          </div>
+        </details>
+      </nav>
+    </header>
+
+    <main id="main-content">
+      <section class="hero shell" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">.NET memory profiler</p>
+          <h1 id="hero-title">See what managed memory is doing.</h1>
+          <p class="hero-lede">
+            Watch live runtime metrics, capture dumps, and trace heap references
+            from one focused desktop tool.
+          </p>
+          <div class="hero-actions">
+            <a
+              class="button button-primary"
+              href="https://github.com/soliktomasz/MemScope"
+            >View GitHub</a>
+            <a class="text-link" href="#get-started">Get started</a>
+          </div>
+        </div>
+
+        <div class="topology" aria-hidden="true">
+          <div class="topology-label">
+            <span>Managed heap</span>
+            <strong>live</strong>
+          </div>
+          <div class="generation generation-zero">
+            <span>Gen 0</span><i></i><i></i><i></i><i></i>
+          </div>
+          <div class="generation generation-one">
+            <span>Gen 1</span><i></i><i></i><i></i>
+          </div>
+          <div class="generation generation-two">
+            <span>Gen 2</span><i></i><i></i>
+          </div>
+          <div class="reference-line"></div>
+        </div>
+        <!-- Future media: hero product image, 1600 x 1200. -->
+      </section>
+
+      <section class="workflow shell reveal" aria-labelledby="workflow-title">
+        <h2 id="workflow-title">From process to proof.</h2>
+        <ol>
+          <li>
+            <strong>Attach</strong>
+            <span>Choose an accessible .NET process.</span>
+          </li>
+          <li>
+            <strong>Observe</strong>
+            <span>Follow heap and collection metrics live.</span>
+          </li>
+          <li>
+            <strong>Capture</strong>
+            <span>Save a heap-bearing dump.</span>
+          </li>
+          <li>
+            <strong>Inspect</strong>
+            <span>Trace types, instances, and references.</span>
+          </li>
+        </ol>
+      </section>
+
+      <section
+        class="capabilities shell reveal"
+        id="capabilities"
+        aria-labelledby="capabilities-title"
+      >
+        <h2 id="capabilities-title">The memory workflow, connected.</h2>
+        <div class="capability-grid">
+          <article class="capability capability-wide">
+            <h3>Find the right process</h3>
+            <p>
+              Discover attachable .NET processes and inspect runtime details
+              before connecting.
+            </p>
+          </article>
+          <article class="capability capability-metric">
+            <h3>Read live pressure</h3>
+            <p>
+              Monitor heap size, allocation rate, generations, collections,
+              promotion, LOH, and POH.
+            </p>
+          </article>
+          <article class="capability capability-accent">
+            <h3>Capture evidence</h3>
+            <p>Create a heap-bearing dump from the active profiling session.</p>
+          </article>
+          <article class="capability">
+            <h3>Browse the heap</h3>
+            <p>
+              Sort and filter managed types, then inspect their object
+              instances.
+            </p>
+          </article>
+          <article class="capability capability-wide">
+            <h3>Follow references</h3>
+            <p>
+              Move through incoming and outgoing references to understand why
+              objects remain alive.
+            </p>
+          </article>
+        </div>
+        <!-- Future media: heap analysis image, 1600 x 1000. -->
+      </section>
+
+      <section class="foundation shell reveal" aria-labelledby="foundation-title">
+        <div class="foundation-copy">
+          <h2 id="foundation-title">Built on the runtime's own diagnostics.</h2>
+          <p>
+            MemScope uses established .NET diagnostics APIs and a cross-platform
+            desktop shell.
+          </p>
+        </div>
+        <dl class="foundation-facts">
+          <div>
+            <dt>EventPipe</dt>
+            <dd>
+              Streams live runtime events without modifying the target
+              application.
+            </dd>
+          </div>
+          <div>
+            <dt>ClrMD</dt>
+            <dd>Walks managed heaps and object references in captured dumps.</dd>
+          </div>
+          <div>
+            <dt>Avalonia</dt>
+            <dd>
+              Delivers the focused desktop interface across supported platforms.
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section
+        class="get-started shell reveal"
+        id="get-started"
+        aria-labelledby="get-started-title"
+      >
+        <div>
+          <h2 id="get-started-title">Run MemScope locally.</h2>
+          <p>
+            Clone the repository and launch the Avalonia application with the
+            .NET 10 SDK.
+          </p>
+        </div>
+        <div class="command-panel">
+          <pre tabindex="0" data-copy-source><code>git clone https://github.com/soliktomasz/MemScope.git
+cd MemScope
+dotnet run --project src/MemoryProfiler.App</code></pre>
+          <button
+            class="button button-secondary"
+            type="button"
+            data-copy-button
+            aria-describedby="copy-status"
+          >Copy commands</button>
+          <p class="copy-status" id="copy-status" aria-live="polite"></p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer shell">
+      <div>
+        <a class="brand" href="./">
+          <span aria-hidden="true">M</span>
+          MemScope
+        </a>
+        <p>Open-source memory inspection for .NET.</p>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/soliktomasz/MemScope">View GitHub</a>
+        <a href="https://github.com/soliktomasz/MemScope/blob/main/LICENSE.md">MIT License</a>
+      </div>
+      <p class="copyright">© <span data-year>2026</span> MemScope contributors.</p>
+    </footer>
+  </body>
+</html>
