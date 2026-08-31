@@ -10,6 +10,7 @@ using MemoryProfiler.App.Navigation;
 using MemoryProfiler.App.ViewModels.Objects;
 using MemoryProfiler.App.ViewModels.Overview;
 using MemoryProfiler.App.ViewModels.Types;
+using MemoryProfiler.Contracts.Heap;
 
 namespace MemoryProfiler.App.ViewModels;
 
@@ -196,6 +197,8 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         _snapshot is null ? string.Empty : MetricFormatting.Bytes(_snapshot.Info.HeapSize);
 
     public string SourcePath => _snapshot?.Info.Path ?? string.Empty;
+
+    public HeapSnapshotInfo? SnapshotInfo => _snapshot?.Info;
 
     public async Task LoadAsync(
         string path,

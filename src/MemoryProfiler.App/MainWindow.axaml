@@ -255,11 +255,76 @@
                 BorderThickness="0,1,0,0">
           <StackPanel Spacing="10">
             <TextBlock Classes="section-title" Text="Recent Sessions" />
-            <Border Padding="0,2,0,0">
+
+            <StackPanel IsVisible="{Binding IsSessionHistoryLoading}"
+                        AutomationProperties.Name="Loading recent sessions"
+                        AutomationProperties.LiveSetting="Polite"
+                        Spacing="8">
+              <Border Classes="skeleton" Width="220" HorizontalAlignment="Left" />
+              <Border Classes="skeleton" Width="340" HorizontalAlignment="Left" />
+            </StackPanel>
+
+            <Border IsVisible="{Binding HasSessionHistoryError}"
+                    Padding="12,9"
+                    CornerRadius="{DynamicResource AppCornerRadius}"
+                    AutomationProperties.Name="{Binding SessionHistoryErrorMessage}"
+                    AutomationProperties.LiveSetting="Polite"
+                    Background="{DynamicResource AppErrorSurfaceBrush}">
+              <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
+                         FontSize="13"
+                         TextWrapping="Wrap"
+                         Text="{Binding SessionHistoryErrorMessage}" />
+            </Border>
+
+            <Border IsVisible="{Binding IsRecentSessionsEmpty}"
+                    Padding="0,2,0,0">
               <TextBlock Classes="secondary"
                          FontSize="13"
                          Text="No recent sessions yet." />
             </Border>
+
+            <ItemsControl IsVisible="{Binding HasRecentSessions}"
+                          ItemsSource="{Binding RecentSessions}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:RecentSessionRowViewModel">
+                  <Border Padding="0,10"
+                          BorderBrush="{DynamicResource AppBorderBrush}"
+                          BorderThickness="0,0,0,1"
+                          ToolTip.Tip="{Binding PathDisplay}">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                      <StackPanel Spacing="3">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                          <TextBlock FontWeight="SemiBold"
+                                     Foreground="{DynamicResource AppTextPrimaryBrush}"
+                                     TextTrimming="CharacterEllipsis"
+                                     Text="{Binding Title}" />
+                          <TextBlock Grid.Column="1"
+                                     Classes="secondary"
+                                     FontSize="12"
+                                     Text="{Binding TimestampDisplay}" />
+                        </Grid>
+                        <TextBlock Classes="secondary"
+                                   FontSize="12"
+                                   Text="{Binding Details}" />
+                        <TextBlock Classes="secondary"
+                                   FontSize="12"
+                                   MaxLines="2"
+                                   TextTrimming="CharacterEllipsis"
+                                   Text="{Binding PathDisplay}" />
+                      </StackPanel>
+                      <Button Grid.Column="1"
+                              Classes="action"
+                              MinHeight="34"
+                              Padding="14,6"
+                              VerticalAlignment="Center"
+                              AutomationProperties.Name="{Binding AutomationName}"
+                              Command="{Binding OpenCommand}"
+                              Content="Open" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
           </StackPanel>
         </Border>
       </StackPanel>

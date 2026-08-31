@@ -29,6 +29,7 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
     private readonly IDumpCaptureService? _dumpCaptureService;
     private readonly IDumpDestinationPicker? _dumpDestinationPicker;
     private readonly Func<string, Task>? _analyzeSnapshot;
+    private readonly Func<string, Task>? _snapshotCaptured;
     private ILiveDiagnosticsSession? _session;
     private Task? _runTask;
     private Task? _disposeTask;
@@ -55,7 +56,8 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         Func<Task>? closeSession = null,
         IDumpCaptureService? dumpCaptureService = null,
         IDumpDestinationPicker? dumpDestinationPicker = null,
-        Func<string, Task>? analyzeSnapshot = null)
+        Func<string, Task>? analyzeSnapshot = null,
+        Func<string, Task>? snapshotCaptured = null)
     {
         if (processId <= 0)
         {
@@ -83,6 +85,7 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         _dumpCaptureService = dumpCaptureService;
         _dumpDestinationPicker = dumpDestinationPicker;
         _analyzeSnapshot = analyzeSnapshot;
+        _snapshotCaptured = snapshotCaptured;
         MetricHistory = new ReadOnlyObservableCollection<MemoryMetrics>(_metricHistory);
         GcTimeline = new GcTimelineViewModel(maximumGcEvents);
         _disconnectCommand = new AsyncCommand(DisconnectAsync, () => IsConnecting || IsLive);
@@ -522,6 +525,7 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
                 CapturedDumpPath = path;
                 CaptureStatusMessage = "Snapshot saved";
             }).ConfigureAwait(false);
+            await NotifySnapshotCapturedAsync(path).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -539,6 +543,24 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         finally
         {
             await PublishAsync(() => IsCapturing = false).ConfigureAwait(false);
+        }
+    }
+
+    private async Task NotifySnapshotCapturedAsync(string path)
+    {
+        if (_snapshotCaptured is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _snapshotCaptured(path).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Session-history persistence is best effort and must not turn a
+            // successful dump capture into a diagnostics failure.
         }
     }
 

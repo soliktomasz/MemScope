@@ -121,6 +121,60 @@ public sealed class ComparisonViewModelTests
     }
 
     [Fact]
+    public async Task LoadingStoredPathsComparesAndReportsThePairOnce()
+    {
+        var completedPairs = new List<(string Before, string After)>();
+        var loader = new StubComparisonLoader(
+            ("before.dmp", BeforeSnapshot()),
+            ("after.dmp", AfterSnapshot()));
+        await using var viewModel = new ComparisonViewModel(
+            loader,
+            new SnapshotComparisonService(),
+            ImmediateUiDispatcher.Instance,
+            new StubDumpFilePicker(),
+            comparisonCompleted: (before, after) =>
+            {
+                completedPairs.Add((before, after));
+                return Task.CompletedTask;
+            });
+
+        await viewModel.LoadAsync("before.dmp", "after.dmp");
+
+        Assert.True(viewModel.HasCompared);
+        Assert.Collection(
+            completedPairs,
+            pair =>
+            {
+                Assert.Equal("before.dmp", pair.Before);
+                Assert.Equal("after.dmp", pair.After);
+            });
+    }
+
+    [Fact]
+    public async Task FailedStoredComparisonDoesNotReportThePair()
+    {
+        var callbackCount = 0;
+        var loader = new StubComparisonLoader(
+            (_, _) => Task.FromException<HeapSnapshot>(
+                new InvalidDataException("Not a managed dump.")));
+        await using var viewModel = new ComparisonViewModel(
+            loader,
+            new SnapshotComparisonService(),
+            ImmediateUiDispatcher.Instance,
+            new StubDumpFilePicker(),
+            comparisonCompleted: (_, _) =>
+            {
+                callbackCount++;
+                return Task.CompletedTask;
+            });
+
+        await viewModel.LoadAsync("before.dmp", "after.dmp");
+
+        Assert.True(viewModel.HasError);
+        Assert.Equal(0, callbackCount);
+    }
+
+    [Fact]
     public async Task LoadFailureSurfacesAnErrorState()
     {
         var picker = new StubDumpFilePicker("before.dmp", "after.dmp");
