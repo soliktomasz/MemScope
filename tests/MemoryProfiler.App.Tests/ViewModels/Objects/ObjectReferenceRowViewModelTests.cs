@@ -1,3 +1,4 @@
+using MemoryProfiler.App.Models;
 using MemoryProfiler.App.ViewModels.Objects;
 using MemoryProfiler.Contracts.Heap;
 using Xunit;

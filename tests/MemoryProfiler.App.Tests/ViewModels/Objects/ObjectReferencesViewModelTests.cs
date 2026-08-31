@@ -1,6 +1,7 @@
 using System.Globalization;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.References;
+using MemoryProfiler.App.Models;
 using MemoryProfiler.App.ViewModels;
 using MemoryProfiler.App.ViewModels.Objects;
 using MemoryProfiler.Contracts.Heap;

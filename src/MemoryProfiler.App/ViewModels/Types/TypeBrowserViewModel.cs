@@ -202,6 +202,9 @@ public sealed class TypeBrowserViewModel : ViewModelBase
         Rebuild();
     }
 
+    internal TypeRowViewModel? FindByMethodTable(ulong methodTable) =>
+        _types.Find(type => type.MethodTable == methodTable);
+
     public void SortBy(TypeSortColumn column)
     {
         if (!CanSort())
