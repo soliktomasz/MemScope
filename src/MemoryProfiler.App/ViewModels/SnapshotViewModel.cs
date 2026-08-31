@@ -5,6 +5,7 @@ using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
 using MemoryProfiler.Analysis.Roots;
+using MemoryProfiler.App.Navigation;
 using MemoryProfiler.App.ViewModels.Objects;
 using MemoryProfiler.App.ViewModels.Overview;
 using MemoryProfiler.App.ViewModels.Types;
@@ -21,6 +22,9 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
     private readonly RelayCommand<object> _showOutgoingReferencesCommand;
     private readonly RelayCommand<object> _showIncomingReferencesCommand;
     private readonly RelayCommand<object> _showPathToRootCommand;
+    private readonly InvestigationNavigationService _navigation = new();
+    private readonly RelayCommand _goBackCommand;
+    private readonly RelayCommand _goForwardCommand;
     private HeapSnapshot? _snapshot;
     private string? _errorMessage;
     private bool _isLoading;
@@ -30,6 +34,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
     private double _retainedSizeProgress;
     private string _retainedSizeStatusText = string.Empty;
     private int _disposed;
+    private bool _suppressTypeNavigation;
 
     internal SnapshotViewModel(
         IHeapSnapshotLoader loader,
@@ -58,10 +63,17 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         _showPathToRootCommand = new RelayCommand<object>(
             ShowPathToRoot,
             parameter => HasSnapshot && CanNavigateFrom(parameter));
+        _goBackCommand = new RelayCommand(
+            _navigation.GoBack,
+            () => _navigation.CanGoBack);
+        _goForwardCommand = new RelayCommand(
+            _navigation.GoForward,
+            () => _navigation.CanGoForward);
         ObjectInstances = new ObjectInstancesViewModel(objectRepository, uiDispatcher);
         ObjectReferences = new ObjectReferencesViewModel(referenceService, uiDispatcher);
         GcRoots = new GcRootsViewModel(gcRootService, uiDispatcher);
         Types.PropertyChanged += OnTypesPropertyChanged;
+        _navigation.StateChanged += OnNavigationStateChanged;
     }
 
     public TypeBrowserViewModel Types { get; } = new();
@@ -82,6 +94,14 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
 
     public System.Windows.Input.ICommand ShowPathToRootCommand =>
         _showPathToRootCommand;
+
+    public System.Windows.Input.ICommand GoBackCommand => _goBackCommand;
+
+    public System.Windows.Input.ICommand GoForwardCommand => _goForwardCommand;
+
+    public bool CanGoBack => _navigation.CanGoBack;
+
+    public bool CanGoForward => _navigation.CanGoForward;
 
     public bool IsLoading
     {
@@ -229,6 +249,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
                 OnPropertyChanged(nameof(HeapSizeDisplay));
                 OnPropertyChanged(nameof(SourcePath));
                 NotifyDisplayStateChanged();
+                _navigation.Reset(new TypesLocation());
             }).ConfigureAwait(false);
 
             // Retained sizes are computed in the background off the UI thread:
@@ -271,6 +292,8 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         }
 
         CancelRetainedSizeLoad();
+        _navigation.StateChanged -= OnNavigationStateChanged;
+        Types.PropertyChanged -= OnTypesPropertyChanged;
         _loadCancellation.Dispose();
         return DisposeChildrenAsync();
     }
@@ -286,7 +309,13 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
     {
         if (eventArgs.PropertyName == nameof(TypeBrowserViewModel.SelectedType))
         {
-            _ = RefreshInstancesAsync();
+            if (!_suppressTypeNavigation)
+            {
+                var location = Types.SelectedType is { } selected
+                    ? (InvestigationLocation)new TypeLocation(selected.MethodTable)
+                    : new TypesLocation();
+                _navigation.Navigate(location);
+            }
         }
 
         NotifyDisplayStateChanged();
@@ -480,7 +509,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
             return;
         }
 
-        _ = ShowPathToRootAsync(snapshot, typeName, address);
+        _navigation.Navigate(new GcRootsLocation(address, typeName));
     }
 
     private async Task ShowPathToRootAsync(
@@ -510,7 +539,83 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
             return;
         }
 
-        _ = ShowReferencesAsync(snapshot, typeName, address, direction);
+        _navigation.Navigate(new ObjectReferencesLocation(address, typeName, direction));
+    }
+
+    private void OnNavigationStateChanged(object? sender, EventArgs eventArgs)
+    {
+        _goBackCommand.NotifyCanExecuteChanged();
+        _goForwardCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanGoBack));
+        OnPropertyChanged(nameof(CanGoForward));
+
+        if (_navigation.CurrentLocation is { } location)
+        {
+            _ = ApplyNavigationAsync(location);
+        }
+    }
+
+    private async Task ApplyNavigationAsync(InvestigationLocation location)
+    {
+        var snapshot = _snapshot;
+        if (snapshot is null)
+        {
+            return;
+        }
+
+        try
+        {
+            switch (location)
+            {
+                case TypesLocation:
+                    SetSelectedTypeWithoutNavigation(null);
+                    await ObjectInstances.ClearAsync().ConfigureAwait(false);
+                    await ObjectReferences.ClearAsync().ConfigureAwait(false);
+                    await GcRoots.ClearAsync().ConfigureAwait(false);
+                    break;
+                case TypeLocation type:
+                    await ObjectReferences.ClearAsync().ConfigureAwait(false);
+                    await GcRoots.ClearAsync().ConfigureAwait(false);
+                    SetSelectedTypeWithoutNavigation(Types.FindByMethodTable(type.MethodTable));
+                    await RefreshInstancesAsync().ConfigureAwait(false);
+                    break;
+                case ObjectReferencesLocation references:
+                    await GcRoots.ClearAsync().ConfigureAwait(false);
+                    await ShowReferencesAsync(
+                        snapshot,
+                        references.ObjectTypeName,
+                        references.ObjectAddress,
+                        references.Direction).ConfigureAwait(false);
+                    break;
+                case GcRootsLocation roots:
+                    await ShowPathToRootAsync(
+                        snapshot,
+                        roots.ObjectTypeName,
+                        roots.ObjectAddress).ConfigureAwait(false);
+                    break;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer navigation or snapshot closure superseded this one.
+        }
+        catch (ObjectDisposedException)
+        {
+            // The snapshot was closed while history was being restored.
+        }
+    }
+
+    private void SetSelectedTypeWithoutNavigation(TypeRowViewModel? type)
+    {
+        _suppressTypeNavigation = true;
+        try
+        {
+            Types.SelectedType = type;
+        }
+        finally
+        {
+            _suppressTypeNavigation = false;
+        }
     }
 
     private async Task ShowReferencesAsync(

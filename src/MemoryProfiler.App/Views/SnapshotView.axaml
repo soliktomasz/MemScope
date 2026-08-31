@@ -43,6 +43,14 @@
       <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
       <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
+    <Style Selector="Button.navigation-button">
+      <Setter Property="MinWidth" Value="36" />
+      <Setter Property="MinHeight" Value="36" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
+      <Setter Property="FontSize" Value="18" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
     <Style Selector="Button.table-header">
       <Setter Property="MinHeight" Value="32" />
       <Setter Property="Padding" Value="8,4" />
@@ -115,11 +123,27 @@
         RowDefinitions="Auto,Auto,Auto,*"
         RowSpacing="16">
     <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="20">
-      <StackPanel Spacing="4">
-        <TextBlock Classes="dashboard-title" Text="Snapshot" />
-        <TextBlock Classes="secondary"
-                   FontSize="13"
-                   Text="{Binding ProcessDescription}" />
+      <StackPanel Orientation="Horizontal" Spacing="16">
+        <StackPanel Orientation="Horizontal"
+                    VerticalAlignment="Top"
+                    Spacing="4">
+          <Button Classes="navigation-button"
+                  AutomationProperties.Name="Go back"
+                  ToolTip.Tip="Back"
+                  Command="{Binding GoBackCommand}"
+                  Content="←" />
+          <Button Classes="navigation-button"
+                  AutomationProperties.Name="Go forward"
+                  ToolTip.Tip="Forward"
+                  Command="{Binding GoForwardCommand}"
+                  Content="→" />
+        </StackPanel>
+        <StackPanel Spacing="4">
+          <TextBlock Classes="dashboard-title" Text="Snapshot" />
+          <TextBlock Classes="secondary"
+                     FontSize="13"
+                     Text="{Binding ProcessDescription}" />
+        </StackPanel>
       </StackPanel>
       <Button Grid.Column="1"
               Classes="dashboard-action"

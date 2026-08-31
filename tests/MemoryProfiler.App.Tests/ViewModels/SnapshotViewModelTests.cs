@@ -454,6 +454,72 @@ public sealed class SnapshotViewModelTests
     }
 
     [Fact]
+    public async Task BackAndForwardRestoreTheSelectedType()
+    {
+        var repository = new StubHeapObjectRepository(
+            [new HeapObjectInfo(0x2000, 0x1000, "System.String", 24, "Gen0")]);
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(
+                Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
+            repository,
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            ImmediateUiDispatcher.Instance);
+        await viewModel.LoadAsync("sample.dmp");
+
+        var type = Assert.Single(viewModel.Types.FilteredTypes);
+        viewModel.Types.SelectedType = type;
+
+        Assert.True(viewModel.GoBackCommand.CanExecute(null));
+        Assert.False(viewModel.GoForwardCommand.CanExecute(null));
+
+        viewModel.GoBackCommand.Execute(null);
+
+        Assert.Null(viewModel.Types.SelectedType);
+        Assert.True(viewModel.ObjectInstances.ShowIdle);
+        Assert.True(viewModel.GoForwardCommand.CanExecute(null));
+
+        viewModel.GoForwardCommand.Execute(null);
+
+        Assert.Same(type, viewModel.Types.SelectedType);
+        Assert.True(viewModel.ObjectInstances.ShowTable);
+    }
+
+    [Fact]
+    public async Task BackAndForwardRestoreDeepObjectReferenceNavigation()
+    {
+        var referenceService = new StubObjectReferenceService(
+            [new ObjectReference(0x1000, 0x2000, ReferenceKind.Field, "_child",
+                "MyApp.Owner", "MyApp.Child")],
+            []);
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(
+                Snapshot(Type("MyApp.Owner", "MyApp", 1, 32))),
+            new StubHeapObjectRepository([]),
+            referenceService,
+            new StubGcRootService([]),
+            ImmediateUiDispatcher.Instance);
+        await viewModel.LoadAsync("sample.dmp");
+        var owner = new HeapObjectRowViewModel(
+            new HeapObjectInfo(0x1000, 0x1000, "MyApp.Owner", 32, "Gen0"));
+
+        viewModel.ShowOutgoingReferencesCommand.Execute(owner);
+        var child = Assert.Single(viewModel.ObjectReferences.References);
+        viewModel.ShowOutgoingReferencesCommand.Execute(child);
+        Assert.Equal("0x000000002000", viewModel.ObjectReferences.AddressDisplay);
+
+        viewModel.GoBackCommand.Execute(null);
+
+        Assert.Equal("MyApp.Owner", viewModel.ObjectReferences.ObjectTypeName);
+        Assert.Equal("0x000000001000", viewModel.ObjectReferences.AddressDisplay);
+
+        viewModel.GoForwardCommand.Execute(null);
+
+        Assert.Equal("MyApp.Child", viewModel.ObjectReferences.ObjectTypeName);
+        Assert.Equal("0x000000002000", viewModel.ObjectReferences.AddressDisplay);
+    }
+
+    [Fact]
     public async Task RootReferenceRowCannotNavigate()
     {
         var referenceService = new StubObjectReferenceService(
