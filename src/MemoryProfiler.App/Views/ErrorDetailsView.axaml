@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:errors="using:MemoryProfiler.App.Errors"
+             x:Class="MemoryProfiler.App.Views.ErrorDetailsView"
+             x:DataType="errors:ProfilerError"
+             x:CompileBindings="True">
+  <Border Padding="12,10"
+          CornerRadius="{DynamicResource AppCornerRadius}"
+          AutomationProperties.Name="{Binding Title}"
+          AutomationProperties.LiveSetting="Assertive"
+          Background="{DynamicResource AppErrorSurfaceBrush}">
+    <StackPanel Spacing="5">
+      <TextBlock FontSize="13"
+                 FontWeight="SemiBold"
+                 Foreground="{DynamicResource AppErrorTextBrush}"
+                 Text="{Binding Title}" />
+      <TextBlock FontSize="13"
+                 Foreground="{DynamicResource AppErrorTextBrush}"
+                 TextWrapping="Wrap"
+                 Text="{Binding Message}" />
+      <Expander IsVisible="{Binding HasTechnicalDetails}"
+                Header="Technical details">
+        <Border Margin="0,6,0,0"
+                Padding="8"
+                CornerRadius="{DynamicResource AppCornerRadius}"
+                Background="{DynamicResource AppSurfaceBrush}">
+          <SelectableTextBlock FontFamily="Cascadia Mono, Menlo, Consolas"
+                               FontSize="11"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"
+                               TextWrapping="Wrap"
+                               Text="{Binding TechnicalDetails}" />
+        </Border>
+      </Expander>
+    </StackPanel>
+  </Border>
+</UserControl>

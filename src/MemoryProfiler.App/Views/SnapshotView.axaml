@@ -3,6 +3,7 @@
              xmlns:vm="using:MemoryProfiler.App.ViewModels"
              xmlns:types="using:MemoryProfiler.App.ViewModels.Types"
              xmlns:objects="using:MemoryProfiler.App.ViewModels.Objects"
+             xmlns:views="using:MemoryProfiler.App.Views"
              x:Class="MemoryProfiler.App.Views.SnapshotView"
              x:DataType="vm:SnapshotViewModel"
              x:CompileBindings="True">
@@ -291,18 +292,9 @@
             </StackPanel>
           </StackPanel>
 
-          <Border IsVisible="{Binding ShowError}"
-                  Margin="0,18"
-                  Padding="12,9"
-                  CornerRadius="{DynamicResource AppCornerRadius}"
-                  AutomationProperties.Name="{Binding ErrorMessage}"
-                  AutomationProperties.LiveSetting="Assertive"
-                  Background="{DynamicResource AppErrorSurfaceBrush}">
-            <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
-                       FontSize="13"
-                       TextWrapping="Wrap"
-                       Text="{Binding ErrorMessage}" />
-          </Border>
+          <Grid IsVisible="{Binding ShowError}" Margin="0,18">
+            <views:ErrorDetailsView DataContext="{Binding Error}" />
+          </Grid>
 
           <Border IsVisible="{Binding ShowEmpty}"
                   Margin="0,18"
@@ -517,18 +509,9 @@
               </Grid>
             </StackPanel>
 
-            <Border IsVisible="{Binding ObjectInstances.ShowError}"
-                    Margin="0,6"
-                    Padding="12,9"
-                    CornerRadius="{DynamicResource AppCornerRadius}"
-                    AutomationProperties.Name="{Binding ObjectInstances.ErrorMessage}"
-                    AutomationProperties.LiveSetting="Assertive"
-                    Background="{DynamicResource AppErrorSurfaceBrush}">
-              <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
-                         FontSize="13"
-                         TextWrapping="Wrap"
-                         Text="{Binding ObjectInstances.ErrorMessage}" />
-            </Border>
+            <Grid IsVisible="{Binding ObjectInstances.ShowError}" Margin="0,6">
+              <views:ErrorDetailsView DataContext="{Binding ObjectInstances.Error}" />
+            </Grid>
 
             <StackPanel IsVisible="{Binding ObjectInstances.ShowEmpty}"
                         HorizontalAlignment="Center"
@@ -701,18 +684,9 @@
               </Grid>
             </StackPanel>
 
-            <Border IsVisible="{Binding ObjectReferences.ShowError}"
-                    Margin="0,6"
-                    Padding="12,9"
-                    CornerRadius="{DynamicResource AppCornerRadius}"
-                    AutomationProperties.Name="{Binding ObjectReferences.ErrorMessage}"
-                    AutomationProperties.LiveSetting="Assertive"
-                    Background="{DynamicResource AppErrorSurfaceBrush}">
-              <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
-                         FontSize="13"
-                         TextWrapping="Wrap"
-                         Text="{Binding ObjectReferences.ErrorMessage}" />
-            </Border>
+            <Grid IsVisible="{Binding ObjectReferences.ShowError}" Margin="0,6">
+              <views:ErrorDetailsView DataContext="{Binding ObjectReferences.Error}" />
+            </Grid>
 
             <StackPanel IsVisible="{Binding ObjectReferences.ShowEmpty}"
                         HorizontalAlignment="Center"
@@ -879,18 +853,9 @@
               </Grid>
             </StackPanel>
 
-            <Border IsVisible="{Binding GcRoots.ShowError}"
-                    Margin="0,6"
-                    Padding="12,9"
-                    CornerRadius="{DynamicResource AppCornerRadius}"
-                    AutomationProperties.Name="{Binding GcRoots.ErrorMessage}"
-                    AutomationProperties.LiveSetting="Assertive"
-                    Background="{DynamicResource AppErrorSurfaceBrush}">
-              <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
-                         FontSize="13"
-                         TextWrapping="Wrap"
-                         Text="{Binding GcRoots.ErrorMessage}" />
-            </Border>
+            <Grid IsVisible="{Binding GcRoots.ShowError}" Margin="0,6">
+              <views:ErrorDetailsView DataContext="{Binding GcRoots.Error}" />
+            </Grid>
 
             <StackPanel IsVisible="{Binding GcRoots.ShowEmpty}"
                         HorizontalAlignment="Center"

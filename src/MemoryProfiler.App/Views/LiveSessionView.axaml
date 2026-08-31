@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:MemoryProfiler.App.ViewModels"
              xmlns:gc="using:MemoryProfiler.App.ViewModels.GcTimeline"
+             xmlns:views="using:MemoryProfiler.App.Views"
              x:Class="MemoryProfiler.App.Views.LiveSessionView"
              x:DataType="vm:LiveSessionViewModel"
              x:CompileBindings="True">
@@ -131,28 +132,12 @@
                 Command="{Binding AnalyzeSnapshotCommand}"
                 Content="Analyze" />
       </Grid>
-      <Border IsVisible="{Binding HasError}"
-              Padding="12,9"
-              CornerRadius="{DynamicResource AppCornerRadius}"
-              AutomationProperties.Name="{Binding ErrorMessage}"
-              AutomationProperties.LiveSetting="Assertive"
-              Background="{DynamicResource AppErrorSurfaceBrush}">
-        <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
-                   FontSize="13"
-                   TextWrapping="Wrap"
-                   Text="{Binding ErrorMessage}" />
-      </Border>
-      <Border IsVisible="{Binding HasCaptureError}"
-              Padding="12,9"
-              CornerRadius="{DynamicResource AppCornerRadius}"
-              AutomationProperties.Name="{Binding CaptureErrorMessage}"
-              AutomationProperties.LiveSetting="Assertive"
-              Background="{DynamicResource AppErrorSurfaceBrush}">
-        <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
-                   FontSize="13"
-                   TextWrapping="Wrap"
-                   Text="{Binding CaptureErrorMessage}" />
-      </Border>
+      <Grid IsVisible="{Binding HasError}">
+        <views:ErrorDetailsView DataContext="{Binding Error}" />
+      </Grid>
+      <Grid IsVisible="{Binding HasCaptureError}">
+        <views:ErrorDetailsView DataContext="{Binding CaptureError}" />
+      </Grid>
     </StackPanel>
 
     <TabControl Grid.Row="2">

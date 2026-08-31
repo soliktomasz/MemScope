@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Roots;
+using MemoryProfiler.App.Errors;
 using MemoryProfiler.Contracts.Heap;
 
 namespace MemoryProfiler.App.ViewModels.Objects;
@@ -18,7 +19,7 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
     private string _objectTypeName = string.Empty;
     private ulong _objectAddress;
     private int _rootCount;
-    private string? _errorMessage;
+    private ProfilerError? _error;
     private bool _isLoading;
     private int _loadVersion;
     private int _disposed;
@@ -68,9 +69,11 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
 
     public bool IsLoading => _isLoading;
 
-    public string ErrorMessage => _errorMessage ?? string.Empty;
+    public ProfilerError? Error => _error;
 
-    public bool HasError => _errorMessage is not null;
+    public string ErrorMessage => Error?.Message ?? string.Empty;
+
+    public bool HasError => Error is not null;
 
     public bool ShowIdle => !HasSelection && !IsLoading && !HasError;
 
@@ -175,7 +178,9 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
                     return;
                 }
 
-                SetError($"Unable to find paths to root. {exception.Message}");
+                SetError(ProfilerErrorFactory.Create(
+                    ProfilerOperation.AnalyzeSnapshot,
+                    exception));
                 _isLoading = false;
                 NotifyDisplayStateChanged();
             }).ConfigureAwait(false);
@@ -207,7 +212,7 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
             _snapshot = null;
             _objectTypeName = string.Empty;
             _objectAddress = 0;
-            _errorMessage = null;
+            SetError(null);
             _isLoading = false;
             _rootCount = 0;
             _rows = [];
@@ -363,14 +368,15 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
         }).ConfigureAwait(false);
     }
 
-    private void SetError(string? message)
+    private void SetError(ProfilerError? error)
     {
-        if (message == _errorMessage)
+        if (error == _error)
         {
             return;
         }
 
-        _errorMessage = message;
+        _error = error;
+        OnPropertyChanged(nameof(Error));
         OnPropertyChanged(nameof(ErrorMessage));
         OnPropertyChanged(nameof(HasError));
     }

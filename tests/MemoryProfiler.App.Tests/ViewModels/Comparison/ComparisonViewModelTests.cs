@@ -1,6 +1,7 @@
 using MemoryProfiler.Analysis.Comparison;
 using MemoryProfiler.Analysis.Dominators;
 using MemoryProfiler.Analysis.Loading;
+using MemoryProfiler.App.Errors;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels;
 using MemoryProfiler.Contracts.Heap;
@@ -191,8 +192,9 @@ public sealed class ComparisonViewModelTests
         Assert.True(viewModel.HasError);
         Assert.True(viewModel.ShowError);
         Assert.False(viewModel.ShowChoosePrompt);
-        Assert.StartsWith("Unable to compare snapshots.", viewModel.ErrorMessage);
-        Assert.Contains("The dump has no CLR runtime.", viewModel.ErrorMessage);
+        Assert.Equal(ProfilerErrorKind.ClrRuntimeNotFound, viewModel.Error!.Kind);
+        Assert.DoesNotContain("The dump has no CLR runtime.", viewModel.ErrorMessage);
+        Assert.Contains("The dump has no CLR runtime.", viewModel.Error.TechnicalDetails);
     }
 
     [Fact]
@@ -333,6 +335,32 @@ public sealed class ComparisonViewModelTests
 
         Assert.True(loadToken.IsCancellationRequested);
         Assert.False(viewModel.HasError);
+    }
+
+    [Fact]
+    public async Task LoadAcceptsExternalCancellationAndReportsIt()
+    {
+        var started = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var loader = new StubComparisonLoader(
+            async (_, cancellationToken) =>
+            {
+                started.SetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new OperationCanceledException(cancellationToken);
+            });
+        await using var viewModel = CreateViewModel(
+            loader,
+            new StubDumpFilePicker());
+        using var cancellation = new CancellationTokenSource();
+
+        var load = viewModel.LoadAsync("before.dmp", "after.dmp", cancellation.Token);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancellation.Cancel();
+        await load;
+
+        Assert.True(viewModel.HasError);
+        Assert.Equal(ProfilerErrorKind.AnalysisCancelled, viewModel.Error!.Kind);
     }
 
     private static async Task<HeapSnapshot> BlockingLoad(

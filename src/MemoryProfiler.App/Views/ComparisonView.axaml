@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:MemoryProfiler.App.ViewModels"
              xmlns:cmp="using:MemoryProfiler.App.ViewModels.Comparison"
+             xmlns:views="using:MemoryProfiler.App.Views"
              x:Class="MemoryProfiler.App.Views.ComparisonView"
              x:DataType="vm:ComparisonViewModel"
              x:CompileBindings="True">
@@ -147,18 +148,9 @@
                    Text="{Binding StatusText}" />
       </StackPanel>
 
-      <Border Grid.Row="1"
-              IsVisible="{Binding ShowError}"
-              Padding="12,9"
-              CornerRadius="{DynamicResource AppCornerRadius}"
-              AutomationProperties.Name="{Binding ErrorMessage}"
-              AutomationProperties.LiveSetting="Assertive"
-              Background="{DynamicResource AppErrorSurfaceBrush}">
-        <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
-                   FontSize="13"
-                   TextWrapping="Wrap"
-                   Text="{Binding ErrorMessage}" />
-      </Border>
+      <Grid Grid.Row="1" IsVisible="{Binding ShowError}">
+        <views:ErrorDetailsView DataContext="{Binding Error}" />
+      </Grid>
 
       <Grid Grid.Row="1"
             IsVisible="{Binding HasCompared}"

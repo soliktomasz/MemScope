@@ -8,6 +8,7 @@ using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
 using MemoryProfiler.Analysis.Roots;
 using MemoryProfiler.App.Services;
+using MemoryProfiler.App.Errors;
 using MemoryProfiler.Diagnostics.Dumps;
 using MemoryProfiler.Diagnostics.Sessions;
 using MemoryProfiler.Contracts.Heap;
@@ -40,10 +41,10 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
     private LiveSessionViewModel? _liveSession;
     private SnapshotViewModel? _snapshot;
     private ComparisonViewModel? _comparison;
-    private string? _dumpErrorMessage;
+    private ProfilerError? _dumpError;
     private SessionCatalog _sessionCatalog = SessionCatalog.Empty;
     private bool _isSessionHistoryLoading;
-    private string? _sessionHistoryErrorMessage;
+    private ProfilerError? _sessionHistoryError;
     private bool _isDisposed;
 
     public StartViewModel(ProcessPickerViewModel processPicker)
@@ -112,15 +113,15 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         _sessionRepository = sessionRepository;
         RecentSessions = new ReadOnlyObservableCollection<RecentSessionRowViewModel>(
             _recentSessions);
-        _attachToProcessCommand = new AsyncCommand(ShowProcessPickerAsync);
+        _attachToProcessCommand = new AsyncCommand(() => ShowProcessPickerAsync());
         _attachSelectedProcessCommand = new AsyncCommand(
-            StartLiveSessionAsync,
+            () => StartLiveSessionAsync(),
             () => ProcessPicker.SelectedProcess is not null &&
                   LiveSession is null &&
                   Snapshot is null &&
                   Comparison is null);
         _openDumpCommand = new AsyncCommand(
-            OpenDumpAsync,
+            () => OpenDumpAsync(),
             () => Snapshot is null &&
                   Comparison is null &&
                   _dumpFilePicker is not null &&
@@ -161,9 +162,11 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
     public bool IsRecentSessionsEmpty =>
         !IsSessionHistoryLoading && !HasRecentSessions && !HasSessionHistoryError;
 
-    public string SessionHistoryErrorMessage => _sessionHistoryErrorMessage ?? string.Empty;
+    public ProfilerError? SessionHistoryError => _sessionHistoryError;
 
-    public bool HasSessionHistoryError => _sessionHistoryErrorMessage is not null;
+    public string SessionHistoryErrorMessage => SessionHistoryError?.Message ?? string.Empty;
+
+    public bool HasSessionHistoryError => SessionHistoryError is not null;
 
     public ICommand AttachToProcessCommand => _attachToProcessCommand;
 
@@ -241,9 +244,11 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
 
     public ICommand CompareSnapshotsCommand => _compareSnapshotsCommand;
 
-    public string DumpErrorMessage => _dumpErrorMessage ?? string.Empty;
+    public ProfilerError? DumpError => _dumpError;
 
-    public bool HasDumpError => _dumpErrorMessage is not null;
+    public string DumpErrorMessage => DumpError?.Message ?? string.Empty;
+
+    public bool HasDumpError => DumpError is not null;
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -287,7 +292,9 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         catch (Exception exception)
         {
             await _uiDispatcher.InvokeAsync(() =>
-                SetSessionHistoryError($"Unable to restore recent sessions. {exception.Message}"));
+                SetSessionHistoryError(ProfilerErrorFactory.Create(
+                    ProfilerOperation.RestoreSessions,
+                    exception)));
         }
         finally
         {
@@ -295,14 +302,14 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         }
     }
 
-    public async Task ShowProcessPickerAsync()
+    public async Task ShowProcessPickerAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
         IsProcessPickerVisible = true;
-        await ProcessPicker.RefreshAsync();
+        await ProcessPicker.RefreshAsync(cancellationToken);
     }
 
-    public async Task StartLiveSessionAsync()
+    public async Task StartLiveSessionAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
         var selectedProcess = ProcessPicker.SelectedProcess;
@@ -319,10 +326,10 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
             closeSession: CloseLiveSessionAsync,
             dumpCaptureService: _dumpCaptureService,
             dumpDestinationPicker: _dumpDestinationPicker,
-            analyzeSnapshot: AnalyzeCapturedDumpAsync,
+            analyzeSnapshot: path => AnalyzeCapturedDumpAsync(path),
             snapshotCaptured: path => RecordCapturedDumpAsync(path, selectedProcess));
         LiveSession = session;
-        await session.StartAsync();
+        await session.StartAsync(cancellationToken);
     }
 
     public async Task CloseLiveSessionAsync()
@@ -340,7 +347,7 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         }
     }
 
-    public async Task OpenDumpAsync()
+    public async Task OpenDumpAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
         if (Snapshot is not null ||
@@ -358,12 +365,18 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         string? path;
         try
         {
-            path = await _dumpFilePicker.PickAsync();
+            path = await _dumpFilePicker.PickAsync().WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
         }
         catch (Exception exception)
         {
             await _uiDispatcher.InvokeAsync(() =>
-                SetDumpError($"Unable to open the dump picker. {exception.Message}"));
+                SetDumpError(ProfilerErrorFactory.Create(
+                    ProfilerOperation.ChooseFile,
+                    exception)));
             return;
         }
 
@@ -372,10 +385,12 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
             return;
         }
 
-        await OpenSnapshotAsync(path);
+        await OpenSnapshotAsync(path, cancellationToken);
     }
 
-    public async Task AnalyzeCapturedDumpAsync(string path)
+    public async Task AnalyzeCapturedDumpAsync(
+        string path,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(path) || Snapshot is not null)
         {
@@ -385,7 +400,7 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         // Keep the live session running behind the snapshot; the user returns to
         // it when the snapshot is closed. A failed analysis must not lose the
         // live diagnostics session.
-        await OpenSnapshotAsync(path);
+        await OpenSnapshotAsync(path, cancellationToken);
     }
 
     public async Task CloseSnapshotAsync()
@@ -441,7 +456,9 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         }
     }
 
-    private async Task OpenSnapshotAsync(string path)
+    private async Task OpenSnapshotAsync(
+        string path,
+        CancellationToken cancellationToken = default)
     {
         if (_snapshotLoader is null ||
             _objectRepository is null ||
@@ -460,10 +477,10 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
             CloseSnapshotAsync,
             _dominatorService);
         Snapshot = snapshot;
-        await snapshot.LoadAsync(path);
+        await snapshot.LoadAsync(path, cancellationToken);
         if (snapshot.SnapshotInfo is { } info)
         {
-            await RecordSnapshotAsync(info);
+            await RecordSnapshotAsync(info).WaitAsync(cancellationToken);
         }
     }
 
@@ -538,7 +555,9 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         catch (Exception exception)
         {
             await _uiDispatcher.InvokeAsync(() =>
-                SetSessionHistoryError($"Unable to save recent sessions. {exception.Message}"));
+                SetSessionHistoryError(ProfilerErrorFactory.Create(
+                    ProfilerOperation.SaveSessions,
+                    exception)));
         }
     }
 
@@ -625,22 +644,24 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         }
     }
 
-    private void SetSessionHistoryError(string? message)
+    private void SetSessionHistoryError(ProfilerError? error)
     {
         if (SetProperty(
-                ref _sessionHistoryErrorMessage,
-                message,
-                nameof(SessionHistoryErrorMessage)))
+                ref _sessionHistoryError,
+                error,
+                nameof(SessionHistoryError)))
         {
+            OnPropertyChanged(nameof(SessionHistoryErrorMessage));
             OnPropertyChanged(nameof(HasSessionHistoryError));
             OnPropertyChanged(nameof(IsRecentSessionsEmpty));
         }
     }
 
-    private void SetDumpError(string? message)
+    private void SetDumpError(ProfilerError? error)
     {
-        if (SetProperty(ref _dumpErrorMessage, message, nameof(DumpErrorMessage)))
+        if (SetProperty(ref _dumpError, error, nameof(DumpError)))
         {
+            OnPropertyChanged(nameof(DumpErrorMessage));
             OnPropertyChanged(nameof(HasDumpError));
         }
     }

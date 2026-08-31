@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using MemoryProfiler.App.Services;
+using MemoryProfiler.App.Errors;
 using MemoryProfiler.App.ViewModels;
 using MemoryProfiler.App.ViewModels.Overview;
 using MemoryProfiler.Contracts.Live;
@@ -55,7 +56,8 @@ public sealed class LiveSessionViewModelTests
 
         Assert.True(viewModel.IsLive);
         Assert.True(viewModel.HasCaptureError);
-        Assert.Contains("Picker unavailable.", viewModel.CaptureErrorMessage);
+        Assert.DoesNotContain("Picker unavailable.", viewModel.CaptureErrorMessage);
+        Assert.Contains("Picker unavailable.", viewModel.CaptureError!.TechnicalDetails);
         await viewModel.DisconnectAsync();
         await run;
     }
@@ -130,7 +132,9 @@ public sealed class LiveSessionViewModelTests
 
         Assert.True(viewModel.IsLive);
         Assert.True(viewModel.HasCaptureError);
-        Assert.Contains("Disk full.", viewModel.CaptureErrorMessage);
+        Assert.Equal(ProfilerErrorKind.DumpCaptureFailed, viewModel.CaptureError!.Kind);
+        Assert.DoesNotContain("Disk full.", viewModel.CaptureErrorMessage);
+        Assert.Contains("Disk full.", viewModel.CaptureError.TechnicalDetails);
         Assert.False(viewModel.HasError);
         await viewModel.DisconnectAsync();
         await run;
@@ -268,8 +272,8 @@ public sealed class LiveSessionViewModelTests
 
         Assert.True(viewModel.IsLive);
         Assert.True(viewModel.HasCaptureError);
-        Assert.Contains("Unable to open the snapshot.", viewModel.CaptureErrorMessage);
-        Assert.Contains("Not a dump.", viewModel.CaptureErrorMessage);
+        Assert.Equal("Dump corrupted", viewModel.CaptureError!.Title);
+        Assert.Contains("Not a dump.", viewModel.CaptureError.TechnicalDetails);
         await viewModel.DisconnectAsync();
         await run;
     }
@@ -300,7 +304,7 @@ public sealed class LiveSessionViewModelTests
         viewModel.AnalyzeSnapshotCommand.Execute(null);
 
         Assert.True(viewModel.HasCaptureError);
-        Assert.Contains("Not a dump.", viewModel.CaptureErrorMessage);
+        Assert.Contains("Not a dump.", viewModel.CaptureError!.TechnicalDetails);
         Assert.Equal("Snapshot saved", viewModel.CaptureStatusMessage);
         Assert.True(viewModel.CanAnalyzeSnapshot);
 
@@ -502,6 +506,77 @@ public sealed class LiveSessionViewModelTests
     }
 
     [Fact]
+    public async Task StartAcceptsExternalCancellation()
+    {
+        var session = new StubSession(waitForCancellation: true);
+        await using var viewModel = new LiveSessionViewModel(
+            4217,
+            "SampleService",
+            new StubSessionFactory(session),
+            ImmediateUiDispatcher.Instance);
+        using var cancellation = new CancellationTokenSource();
+
+        var run = viewModel.StartAsync(cancellation.Token);
+        await session.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancellation.Cancel();
+        await run;
+
+        Assert.True(session.ObservationToken.IsCancellationRequested);
+        Assert.True(viewModel.IsDisconnected);
+        Assert.False(viewModel.HasError);
+    }
+
+    [Fact]
+    public async Task CaptureAcceptsExternalCancellation()
+    {
+        var session = new StubSession(waitForCancellation: true);
+        var capture = new ControllableDumpCaptureService();
+        await using var viewModel = CreateCaptureViewModel(session, capture);
+        var run = viewModel.StartAsync();
+        await session.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        using var cancellation = new CancellationTokenSource();
+
+        var operation = viewModel.CaptureSnapshotAsync(cancellation.Token);
+        await capture.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancellation.Cancel();
+        await operation;
+
+        Assert.True(capture.Token.IsCancellationRequested);
+        Assert.False(viewModel.HasCaptureError);
+        await viewModel.DisconnectAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task CaptureCancellationAlsoCancelsTheDestinationPickerWait()
+    {
+        var session = new StubSession(waitForCancellation: true);
+        var capture = new ControllableDumpCaptureService();
+        var picker = new BlockingDumpDestinationPicker();
+        await using var viewModel = new LiveSessionViewModel(
+            4217,
+            "SampleService",
+            new StubSessionFactory(session),
+            ImmediateUiDispatcher.Instance,
+            dumpCaptureService: capture,
+            dumpDestinationPicker: picker);
+        var run = viewModel.StartAsync();
+        await session.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        using var cancellation = new CancellationTokenSource();
+
+        var operation = viewModel.CaptureSnapshotAsync(cancellation.Token);
+        await picker.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancellation.Cancel();
+        await operation;
+
+        Assert.False(capture.Started.Task.IsCompleted);
+        Assert.False(viewModel.IsCapturing);
+        Assert.False(viewModel.HasCaptureError);
+        await viewModel.DisconnectAsync();
+        await run;
+    }
+
+    [Fact]
     public async Task ConnectionFailureBecomesAnActionableErrorState()
     {
         await using var viewModel = new LiveSessionViewModel(
@@ -513,7 +588,9 @@ public sealed class LiveSessionViewModelTests
         await viewModel.StartAsync();
 
         Assert.True(viewModel.HasError);
-        Assert.Contains("Endpoint unavailable.", viewModel.ErrorMessage);
+        Assert.Equal(ProfilerErrorKind.UnableToAttach, viewModel.Error!.Kind);
+        Assert.DoesNotContain("Endpoint unavailable.", viewModel.ErrorMessage);
+        Assert.Contains("Endpoint unavailable.", viewModel.Error.TechnicalDetails);
         Assert.False(viewModel.IsConnecting);
         Assert.True(viewModel.IsDisconnected);
     }
@@ -583,7 +660,8 @@ public sealed class LiveSessionViewModelTests
 
         Assert.True(viewModel.HasError);
         Assert.True(viewModel.IsDisconnected);
-        Assert.Contains("session ended unexpectedly", viewModel.ErrorMessage);
+        Assert.Equal(ProfilerErrorKind.ProcessExited, viewModel.Error!.Kind);
+        Assert.Contains("Transport closed.", viewModel.Error.TechnicalDetails);
     }
 
     private static MemoryMetrics CreateMetrics(
@@ -782,6 +860,21 @@ public sealed class LiveSessionViewModelTests
         : IDumpDestinationPicker
     {
         public Task<string?> PickAsync() => Task.FromResult(directory);
+    }
+
+    private sealed class BlockingDumpDestinationPicker : IDumpDestinationPicker
+    {
+        public TaskCompletionSource Started { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        private TaskCompletionSource<string?> Completion { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<string?> PickAsync()
+        {
+            Started.TrySetResult();
+            return await Completion.Task;
+        }
     }
 
     private sealed class ControllableDumpDestinationPicker : IDumpDestinationPicker

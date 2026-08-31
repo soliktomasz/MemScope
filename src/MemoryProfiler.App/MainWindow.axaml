@@ -90,17 +90,9 @@
                 Content="Compare Snapshots" />
       </StackPanel>
 
-      <Border IsVisible="{Binding HasDumpError}"
-              Padding="12,9"
-              CornerRadius="{DynamicResource AppCornerRadius}"
-              AutomationProperties.Name="{Binding DumpErrorMessage}"
-              AutomationProperties.LiveSetting="Assertive"
-              Background="{DynamicResource AppErrorSurfaceBrush}">
-        <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
-                   FontSize="13"
-                   TextWrapping="Wrap"
-                   Text="{Binding DumpErrorMessage}" />
-      </Border>
+      <Grid IsVisible="{Binding HasDumpError}">
+        <views:ErrorDetailsView DataContext="{Binding DumpError}" />
+      </Grid>
     </StackPanel>
 
     <ScrollViewer Grid.Row="2"
@@ -137,18 +129,9 @@
                          IsVisible="{Binding ProcessPicker.IsLoading}"
                          IsIndeterminate="True" />
 
-            <Border Grid.Row="2"
-                    IsVisible="{Binding ProcessPicker.HasError}"
-                    Padding="12,9"
-                    CornerRadius="{DynamicResource AppCornerRadius}"
-                    AutomationProperties.Name="{Binding ProcessPicker.ErrorMessage}"
-                    AutomationProperties.LiveSetting="Assertive"
-                    Background="{DynamicResource AppErrorSurfaceBrush}">
-              <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
-                         FontSize="13"
-                         TextWrapping="Wrap"
-                         Text="{Binding ProcessPicker.ErrorMessage}" />
-            </Border>
+            <Grid Grid.Row="2" IsVisible="{Binding ProcessPicker.HasError}">
+              <views:ErrorDetailsView DataContext="{Binding ProcessPicker.Error}" />
+            </Grid>
 
             <Grid Grid.Row="3">
               <Grid IsVisible="{Binding ProcessPicker.HasProcesses}"
@@ -264,17 +247,9 @@
               <Border Classes="skeleton" Width="340" HorizontalAlignment="Left" />
             </StackPanel>
 
-            <Border IsVisible="{Binding HasSessionHistoryError}"
-                    Padding="12,9"
-                    CornerRadius="{DynamicResource AppCornerRadius}"
-                    AutomationProperties.Name="{Binding SessionHistoryErrorMessage}"
-                    AutomationProperties.LiveSetting="Polite"
-                    Background="{DynamicResource AppErrorSurfaceBrush}">
-              <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
-                         FontSize="13"
-                         TextWrapping="Wrap"
-                         Text="{Binding SessionHistoryErrorMessage}" />
-            </Border>
+            <Grid IsVisible="{Binding HasSessionHistoryError}">
+              <views:ErrorDetailsView DataContext="{Binding SessionHistoryError}" />
+            </Grid>
 
             <Border IsVisible="{Binding IsRecentSessionsEmpty}"
                     Padding="0,2,0,0">
