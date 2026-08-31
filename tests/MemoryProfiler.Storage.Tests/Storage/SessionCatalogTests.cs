@@ -82,4 +82,48 @@ public sealed class SessionCatalogTests
         Assert.Equal(20, catalog.ComparisonPairs.Count);
         Assert.Equal("/dumps/20-before.dmp", catalog.ComparisonPairs[0].BeforePath);
     }
+
+    [Fact]
+    public void ConstructorNormalizesEveryCollectionToCatalogInvariants()
+    {
+        var dumps = Enumerable.Range(0, 21)
+            .Select(index => new RecentDump(
+                $"/dumps/{index}.dmp",
+                null,
+                null,
+                null,
+                Older.AddMinutes(index),
+                null,
+                null))
+            .Append(new RecentDump(
+                "/dumps/20.dmp", "Newest", null, null, Newer, null, null))
+            .ToArray();
+        var investigations = Enumerable.Range(0, 21)
+            .Select(index => new RecentInvestigation(
+                $"/dumps/{index}.dmp",
+                null,
+                Older.AddMinutes(index)))
+            .Append(new RecentInvestigation("/dumps/20.dmp", "Newest", Newer))
+            .ToArray();
+        var comparisons = Enumerable.Range(0, 21)
+            .Select(index => new ComparisonPair(
+                $"/dumps/{index}-before.dmp",
+                $"/dumps/{index}-after.dmp",
+                Older.AddMinutes(index)))
+            .Append(new ComparisonPair(
+                "/dumps/20-before.dmp",
+                "/dumps/20-after.dmp",
+                Newer))
+            .ToArray();
+
+        var catalog = new SessionCatalog(dumps, investigations, comparisons);
+
+        Assert.Equal(20, catalog.RecentDumps.Count);
+        Assert.Equal("Newest", catalog.RecentDumps[0].ProcessName);
+        Assert.DoesNotContain(catalog.RecentDumps, dump => dump.Path == "/dumps/0.dmp");
+        Assert.Equal(20, catalog.RecentInvestigations.Count);
+        Assert.Equal("Newest", catalog.RecentInvestigations[0].ProcessName);
+        Assert.Equal(20, catalog.ComparisonPairs.Count);
+        Assert.Equal(Newer, catalog.ComparisonPairs[0].LastComparedAt);
+    }
 }

@@ -83,6 +83,8 @@ public sealed record SessionCatalog
     private static readonly StringComparer PathComparer = OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase
         : StringComparer.Ordinal;
+    private static readonly IEqualityComparer<ComparisonPair> ComparisonComparer =
+        new ComparisonPathComparer();
 
     public SessionCatalog(
         IReadOnlyList<RecentDump> recentDumps,
@@ -92,54 +94,78 @@ public sealed record SessionCatalog
         ArgumentNullException.ThrowIfNull(recentDumps);
         ArgumentNullException.ThrowIfNull(recentInvestigations);
         ArgumentNullException.ThrowIfNull(comparisonPairs);
-        RecentDumps = recentDumps.ToArray();
-        RecentInvestigations = recentInvestigations.ToArray();
-        ComparisonPairs = comparisonPairs.ToArray();
+        RecentDumps = NormalizeDumps(recentDumps);
+        RecentInvestigations = NormalizeInvestigations(recentInvestigations);
+        ComparisonPairs = NormalizeComparisons(comparisonPairs);
     }
 
     public static SessionCatalog Empty { get; } = new([], [], []);
 
-    public IReadOnlyList<RecentDump> RecentDumps { get; init; }
+    public IReadOnlyList<RecentDump> RecentDumps { get; private init; }
 
-    public IReadOnlyList<RecentInvestigation> RecentInvestigations { get; init; }
+    public IReadOnlyList<RecentInvestigation> RecentInvestigations { get; private init; }
 
-    public IReadOnlyList<ComparisonPair> ComparisonPairs { get; init; }
+    public IReadOnlyList<ComparisonPair> ComparisonPairs { get; private init; }
 
     public SessionCatalog WithRecentDump(RecentDump dump)
     {
         ArgumentNullException.ThrowIfNull(dump);
-        var items = RecentDumps
-            .Where(item => !PathComparer.Equals(item.Path, dump.Path))
-            .Append(dump)
-            .OrderByDescending(item => item.CapturedAt)
-            .Take(MaximumEntries)
-            .ToArray();
+        var items = NormalizeDumps(RecentDumps.Append(dump));
         return this with { RecentDumps = items };
     }
 
     public SessionCatalog WithRecentInvestigation(RecentInvestigation investigation)
     {
         ArgumentNullException.ThrowIfNull(investigation);
-        var items = RecentInvestigations
-            .Where(item => !PathComparer.Equals(item.Path, investigation.Path))
-            .Append(investigation)
-            .OrderByDescending(item => item.LastOpenedAt)
-            .Take(MaximumEntries)
-            .ToArray();
+        var items = NormalizeInvestigations(RecentInvestigations.Append(investigation));
         return this with { RecentInvestigations = items };
     }
 
     public SessionCatalog WithComparison(ComparisonPair comparison)
     {
         ArgumentNullException.ThrowIfNull(comparison);
-        var items = ComparisonPairs
-            .Where(item =>
-                !PathComparer.Equals(item.BeforePath, comparison.BeforePath) ||
-                !PathComparer.Equals(item.AfterPath, comparison.AfterPath))
-            .Append(comparison)
-            .OrderByDescending(item => item.LastComparedAt)
+        var items = NormalizeComparisons(ComparisonPairs.Append(comparison));
+        return this with { ComparisonPairs = items };
+    }
+
+    private static RecentDump[] NormalizeDumps(IEnumerable<RecentDump> dumps) =>
+        dumps
+            .OrderByDescending(item => item.CapturedAt)
+            .DistinctBy(item => item.Path, PathComparer)
             .Take(MaximumEntries)
             .ToArray();
-        return this with { ComparisonPairs = items };
+
+    private static RecentInvestigation[] NormalizeInvestigations(
+        IEnumerable<RecentInvestigation> investigations) =>
+        investigations
+            .OrderByDescending(item => item.LastOpenedAt)
+            .DistinctBy(item => item.Path, PathComparer)
+            .Take(MaximumEntries)
+            .ToArray();
+
+    private static ComparisonPair[] NormalizeComparisons(
+        IEnumerable<ComparisonPair> comparisons) =>
+        comparisons
+            .OrderByDescending(item => item.LastComparedAt)
+            .Distinct(ComparisonComparer)
+            .Take(MaximumEntries)
+            .ToArray();
+
+    private sealed class ComparisonPathComparer : IEqualityComparer<ComparisonPair>
+    {
+        public bool Equals(ComparisonPair? x, ComparisonPair? y) =>
+            ReferenceEquals(x, y) ||
+            x is not null &&
+            y is not null &&
+            PathComparer.Equals(x.BeforePath, y.BeforePath) &&
+            PathComparer.Equals(x.AfterPath, y.AfterPath);
+
+        public int GetHashCode(ComparisonPair pair)
+        {
+            var hash = new HashCode();
+            hash.Add(pair.BeforePath, PathComparer);
+            hash.Add(pair.AfterPath, PathComparer);
+            return hash.ToHashCode();
+        }
     }
 }
