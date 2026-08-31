@@ -1,4 +1,4 @@
-using MemoryProfiler.App.ViewModels.Objects;
+using MemoryProfiler.App.Models;
 
 namespace MemoryProfiler.App.Navigation;
 

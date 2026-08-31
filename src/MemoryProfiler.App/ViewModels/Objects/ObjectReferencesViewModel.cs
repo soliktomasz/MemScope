@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.References;
+using MemoryProfiler.App.Models;
 using MemoryProfiler.Contracts.Heap;
 
 namespace MemoryProfiler.App.ViewModels.Objects;

@@ -10,7 +10,7 @@
 
 ---
 
-### Task 1: Navigation model and service
+## Task 1: Navigation model and service
 
 **Files:**
 - Create: `src/MemoryProfiler.App/Navigation/InvestigationLocation.cs`
@@ -22,7 +22,7 @@
 3. Implement immutable location records and the minimal stack service with `CurrentLocationChanged`.
 4. Run the focused tests and confirm they pass.
 
-### Task 2: Snapshot integration
+## Task 2: Snapshot integration
 
 **Files:**
 - Modify: `src/MemoryProfiler.App/ViewModels/SnapshotViewModel.cs`
@@ -34,7 +34,7 @@
 3. Add commands, replay handling, and a method to select a type by method table.
 4. Run the focused tests and confirm they pass.
 
-### Task 3: Toolbar and verification
+## Task 3: Toolbar and verification
 
 **Files:**
 - Modify: `src/MemoryProfiler.App/Views/SnapshotView.axaml`

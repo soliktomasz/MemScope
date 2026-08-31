@@ -1,5 +1,5 @@
 using MemoryProfiler.App.Navigation;
-using MemoryProfiler.App.ViewModels.Objects;
+using MemoryProfiler.App.Models;
 using Xunit;
 
 namespace MemoryProfiler.App.Tests.Navigation;

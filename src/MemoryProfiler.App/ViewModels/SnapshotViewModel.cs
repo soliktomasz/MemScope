@@ -5,6 +5,7 @@ using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
 using MemoryProfiler.Analysis.Roots;
+using MemoryProfiler.App.Models;
 using MemoryProfiler.App.Navigation;
 using MemoryProfiler.App.ViewModels.Objects;
 using MemoryProfiler.App.ViewModels.Overview;
@@ -576,7 +577,9 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
                 case TypeLocation type:
                     await ObjectReferences.ClearAsync().ConfigureAwait(false);
                     await GcRoots.ClearAsync().ConfigureAwait(false);
-                    SetSelectedTypeWithoutNavigation(Types.FindByMethodTable(type.MethodTable));
+                    await PublishAsync(() =>
+                        SetSelectedTypeWithoutNavigation(
+                            Types.FindByMethodTable(type.MethodTable))).ConfigureAwait(false);
                     await RefreshInstancesAsync().ConfigureAwait(false);
                     break;
                 case ObjectReferencesLocation references:

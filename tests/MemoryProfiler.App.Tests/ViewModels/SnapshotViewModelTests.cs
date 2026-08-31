@@ -4,6 +4,7 @@ using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
 using MemoryProfiler.Analysis.Roots;
+using MemoryProfiler.App.Models;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels.Objects;
 using MemoryProfiler.App.ViewModels;
@@ -486,6 +487,39 @@ public sealed class SnapshotViewModelTests
     }
 
     [Fact]
+    public async Task ForwardRestoresTheSelectedTypeOnTheUiDispatcher()
+    {
+        var dispatcher = new TrackingUiDispatcher();
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(
+                Snapshot(Type("System.String", "System.Private.CoreLib", 1, 24))),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            dispatcher);
+        await viewModel.LoadAsync("sample.dmp");
+        viewModel.Types.SelectedType = Assert.Single(viewModel.Types.FilteredTypes);
+        viewModel.GoBackCommand.Execute(null);
+        var selectionChanged = false;
+        var selectionChangedOutsideDispatcher = false;
+        viewModel.Types.PropertyChanged += (_, eventArgs) =>
+        {
+            if (eventArgs.PropertyName != nameof(viewModel.Types.SelectedType))
+            {
+                return;
+            }
+
+            selectionChanged = true;
+            selectionChangedOutsideDispatcher = !dispatcher.IsDispatching;
+        };
+
+        viewModel.GoForwardCommand.Execute(null);
+
+        Assert.True(selectionChanged);
+        Assert.False(selectionChangedOutsideDispatcher);
+    }
+
+    [Fact]
     public async Task BackAndForwardRestoreDeepObjectReferenceNavigation()
     {
         var referenceService = new StubObjectReferenceService(
@@ -882,5 +916,27 @@ public sealed class SnapshotViewModelTests
             IProgress<double>? progress = null,
             CancellationToken cancellationToken = default) =>
             _compute(progress, cancellationToken);
+    }
+
+    private sealed class TrackingUiDispatcher : IUiDispatcher
+    {
+        private int _dispatchDepth;
+
+        public bool IsDispatching => _dispatchDepth > 0;
+
+        public Task InvokeAsync(Action action)
+        {
+            _dispatchDepth++;
+            try
+            {
+                action();
+            }
+            finally
+            {
+                _dispatchDepth--;
+            }
+
+            return Task.CompletedTask;
+        }
     }
 }

@@ -1,4 +1,5 @@
 using System.Globalization;
+using MemoryProfiler.App.Models;
 using MemoryProfiler.Contracts.Heap;
 
 namespace MemoryProfiler.App.ViewModels.Objects;

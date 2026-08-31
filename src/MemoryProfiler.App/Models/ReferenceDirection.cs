@@ -1,4 +1,4 @@
-namespace MemoryProfiler.App.ViewModels.Objects;
+namespace MemoryProfiler.App.Models;
 
 public enum ReferenceDirection
 {
