@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows.Input;
 using MemoryProfiler.Analysis.Comparison;
@@ -9,6 +10,8 @@ using MemoryProfiler.Analysis.Roots;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.Diagnostics.Dumps;
 using MemoryProfiler.Diagnostics.Sessions;
+using MemoryProfiler.Contracts.Heap;
+using MemoryProfiler.Storage.Storage;
 
 namespace MemoryProfiler.App.ViewModels;
 
@@ -25,6 +28,10 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
     private readonly IDominatorTreeService? _dominatorService;
     private readonly ISnapshotComparisonService? _comparisonService;
     private readonly IDumpFilePicker? _dumpFilePicker;
+    private readonly ISessionRepository? _sessionRepository;
+    private readonly SemaphoreSlim _sessionHistoryGate = new(1, 1);
+    private readonly CancellationTokenSource _sessionHistoryCancellation = new();
+    private readonly ObservableCollection<RecentSessionRowViewModel> _recentSessions = [];
     private readonly AsyncCommand _attachToProcessCommand;
     private readonly AsyncCommand _attachSelectedProcessCommand;
     private readonly AsyncCommand _openDumpCommand;
@@ -34,6 +41,9 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
     private SnapshotViewModel? _snapshot;
     private ComparisonViewModel? _comparison;
     private string? _dumpErrorMessage;
+    private SessionCatalog _sessionCatalog = SessionCatalog.Empty;
+    private bool _isSessionHistoryLoading;
+    private string? _sessionHistoryErrorMessage;
     private bool _isDisposed;
 
     public StartViewModel(ProcessPickerViewModel processPicker)
@@ -81,7 +91,8 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         IObjectReferenceService? referenceService = null,
         IGcRootService? gcRootService = null,
         IDominatorTreeService? dominatorService = null,
-        ISnapshotComparisonService? comparisonService = null)
+        ISnapshotComparisonService? comparisonService = null,
+        ISessionRepository? sessionRepository = null)
     {
         ArgumentNullException.ThrowIfNull(processPicker);
         ArgumentNullException.ThrowIfNull(sessionFactory);
@@ -98,6 +109,9 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         _gcRootService = gcRootService;
         _dominatorService = dominatorService;
         _comparisonService = comparisonService;
+        _sessionRepository = sessionRepository;
+        RecentSessions = new ReadOnlyObservableCollection<RecentSessionRowViewModel>(
+            _recentSessions);
         _attachToProcessCommand = new AsyncCommand(ShowProcessPickerAsync);
         _attachSelectedProcessCommand = new AsyncCommand(
             StartLiveSessionAsync,
@@ -127,6 +141,29 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
     }
 
     public ProcessPickerViewModel ProcessPicker { get; }
+
+    public ReadOnlyObservableCollection<RecentSessionRowViewModel> RecentSessions { get; }
+
+    public bool IsSessionHistoryLoading
+    {
+        get => _isSessionHistoryLoading;
+        private set
+        {
+            if (SetProperty(ref _isSessionHistoryLoading, value))
+            {
+                OnPropertyChanged(nameof(IsRecentSessionsEmpty));
+            }
+        }
+    }
+
+    public bool HasRecentSessions => RecentSessions.Count > 0;
+
+    public bool IsRecentSessionsEmpty =>
+        !IsSessionHistoryLoading && !HasRecentSessions && !HasSessionHistoryError;
+
+    public string SessionHistoryErrorMessage => _sessionHistoryErrorMessage ?? string.Empty;
+
+    public bool HasSessionHistoryError => _sessionHistoryErrorMessage is not null;
 
     public ICommand AttachToProcessCommand => _attachToProcessCommand;
 
@@ -208,6 +245,56 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
 
     public bool HasDumpError => _dumpErrorMessage is not null;
 
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        if (_sessionRepository is null)
+        {
+            return;
+        }
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            _sessionHistoryCancellation.Token);
+        await _uiDispatcher.InvokeAsync(() =>
+        {
+            SetSessionHistoryError(null);
+            IsSessionHistoryLoading = true;
+        });
+
+        try
+        {
+            await _sessionHistoryGate.WaitAsync(linked.Token).ConfigureAwait(false);
+            try
+            {
+                var catalog = await _sessionRepository
+                    .LoadAsync(linked.Token)
+                    .ConfigureAwait(false);
+                await _uiDispatcher.InvokeAsync(() =>
+                {
+                    _sessionCatalog = catalog;
+                    RebuildRecentSessions();
+                });
+            }
+            finally
+            {
+                _sessionHistoryGate.Release();
+            }
+        }
+        catch (OperationCanceledException) when (linked.Token.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            await _uiDispatcher.InvokeAsync(() =>
+                SetSessionHistoryError($"Unable to restore recent sessions. {exception.Message}"));
+        }
+        finally
+        {
+            await _uiDispatcher.InvokeAsync(() => IsSessionHistoryLoading = false);
+        }
+    }
+
     public async Task ShowProcessPickerAsync()
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
@@ -232,7 +319,8 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
             closeSession: CloseLiveSessionAsync,
             dumpCaptureService: _dumpCaptureService,
             dumpDestinationPicker: _dumpDestinationPicker,
-            analyzeSnapshot: AnalyzeCapturedDumpAsync);
+            analyzeSnapshot: AnalyzeCapturedDumpAsync,
+            snapshotCaptured: path => RecordCapturedDumpAsync(path, selectedProcess));
         LiveSession = session;
         await session.StartAsync();
     }
@@ -332,7 +420,8 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
             _uiDispatcher,
             _dumpFilePicker,
             close: CloseComparisonAsync,
-            dominatorService: _dominatorService);
+            dominatorService: _dominatorService,
+            comparisonCompleted: RecordComparisonAsync);
         Comparison = comparison;
         return Task.CompletedTask;
     }
@@ -372,6 +461,180 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
             _dominatorService);
         Snapshot = snapshot;
         await snapshot.LoadAsync(path);
+        if (snapshot.SnapshotInfo is { } info)
+        {
+            await RecordSnapshotAsync(info);
+        }
+    }
+
+    private Task RecordCapturedDumpAsync(string path, ProcessRowViewModel process) =>
+        UpdateCatalogAsync(catalog => catalog.WithRecentDump(new RecentDump(
+            path,
+            process.Name,
+            process.ProcessId,
+            process.RuntimeVersion,
+            DateTimeOffset.UtcNow,
+            null,
+            null)));
+
+    private Task RecordSnapshotAsync(HeapSnapshotInfo info) =>
+        UpdateCatalogAsync(catalog => catalog
+            .WithRecentDump(new RecentDump(
+                info.Path,
+                info.ProcessName,
+                info.ProcessId,
+                info.RuntimeVersion,
+                info.CapturedAt,
+                info.ObjectCount,
+                info.HeapSize))
+            .WithRecentInvestigation(new RecentInvestigation(
+                info.Path,
+                info.ProcessName,
+                DateTimeOffset.UtcNow)));
+
+    private Task RecordComparisonAsync(string beforePath, string afterPath) =>
+        UpdateCatalogAsync(catalog => catalog.WithComparison(new ComparisonPair(
+            beforePath,
+            afterPath,
+            DateTimeOffset.UtcNow)));
+
+    private async Task UpdateCatalogAsync(
+        Func<SessionCatalog, SessionCatalog> update,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        if (_sessionRepository is null || _isDisposed)
+        {
+            return;
+        }
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            _sessionHistoryCancellation.Token);
+        try
+        {
+            await _sessionHistoryGate.WaitAsync(linked.Token).ConfigureAwait(false);
+            try
+            {
+                var updated = update(_sessionCatalog);
+                await _uiDispatcher.InvokeAsync(() =>
+                {
+                    _sessionCatalog = updated;
+                    RebuildRecentSessions();
+                });
+                await _sessionRepository
+                    .SaveAsync(updated, linked.Token)
+                    .ConfigureAwait(false);
+                await _uiDispatcher.InvokeAsync(() => SetSessionHistoryError(null));
+            }
+            finally
+            {
+                _sessionHistoryGate.Release();
+            }
+        }
+        catch (OperationCanceledException) when (linked.Token.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            await _uiDispatcher.InvokeAsync(() =>
+                SetSessionHistoryError($"Unable to save recent sessions. {exception.Message}"));
+        }
+    }
+
+    private void RebuildRecentSessions()
+    {
+        var pathComparer = OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+        var investigationPaths = new HashSet<string>(pathComparer);
+        var rows = new List<RecentSessionRowViewModel>();
+        foreach (var investigation in _sessionCatalog.RecentInvestigations)
+        {
+            investigationPaths.Add(investigation.Path);
+            rows.Add(CreateSnapshotRow(
+                investigation.Path,
+                investigation.ProcessName,
+                investigation.LastOpenedAt));
+        }
+
+        foreach (var dump in _sessionCatalog.RecentDumps)
+        {
+            if (!investigationPaths.Contains(dump.Path))
+            {
+                rows.Add(CreateSnapshotRow(dump.Path, dump.ProcessName, dump.CapturedAt));
+            }
+        }
+
+        foreach (var comparison in _sessionCatalog.ComparisonPairs)
+        {
+            var beforeName = Path.GetFileName(comparison.BeforePath);
+            var afterName = Path.GetFileName(comparison.AfterPath);
+            rows.Add(new RecentSessionRowViewModel(
+                RecentSessionKind.Comparison,
+                "Snapshot comparison",
+                $"{beforeName} to {afterName}",
+                $"{comparison.BeforePath}{Environment.NewLine}{comparison.AfterPath}",
+                comparison.LastComparedAt,
+                () => OpenRecentComparisonAsync(comparison)));
+        }
+
+        _recentSessions.Clear();
+        foreach (var row in rows.OrderByDescending(row => row.Timestamp))
+        {
+            _recentSessions.Add(row);
+        }
+
+        OnPropertyChanged(nameof(HasRecentSessions));
+        OnPropertyChanged(nameof(IsRecentSessionsEmpty));
+    }
+
+    private RecentSessionRowViewModel CreateSnapshotRow(
+        string path,
+        string? processName,
+        DateTimeOffset timestamp) =>
+        new(
+            RecentSessionKind.Snapshot,
+            string.IsNullOrWhiteSpace(processName) ? Path.GetFileName(path) : processName,
+            "Snapshot",
+            path,
+            timestamp,
+            () => OpenRecentSnapshotAsync(path));
+
+    private async Task OpenRecentSnapshotAsync(string path)
+    {
+        if (!IsStartVisible)
+        {
+            return;
+        }
+
+        await OpenSnapshotAsync(path);
+    }
+
+    private async Task OpenRecentComparisonAsync(ComparisonPair comparison)
+    {
+        if (!IsStartVisible)
+        {
+            return;
+        }
+
+        await ShowComparisonAsync();
+        if (Comparison is { } viewModel)
+        {
+            await viewModel.LoadAsync(comparison.BeforePath, comparison.AfterPath);
+        }
+    }
+
+    private void SetSessionHistoryError(string? message)
+    {
+        if (SetProperty(
+                ref _sessionHistoryErrorMessage,
+                message,
+                nameof(SessionHistoryErrorMessage)))
+        {
+            OnPropertyChanged(nameof(HasSessionHistoryError));
+            OnPropertyChanged(nameof(IsRecentSessionsEmpty));
+        }
     }
 
     private void SetDumpError(string? message)
@@ -395,6 +658,7 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         }
 
         _isDisposed = true;
+        await _sessionHistoryCancellation.CancelAsync();
         ProcessPicker.PropertyChanged -= OnProcessPickerPropertyChanged;
         ProcessPicker.Dispose();
         if (LiveSession is not null)
@@ -414,6 +678,11 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
             await Comparison.DisposeAsync();
             Comparison = null;
         }
+
+        await _sessionHistoryGate.WaitAsync();
+        _sessionHistoryGate.Release();
+        _sessionHistoryGate.Dispose();
+        _sessionHistoryCancellation.Dispose();
     }
 
     private void OnProcessPickerPropertyChanged(object? sender, PropertyChangedEventArgs eventArgs)

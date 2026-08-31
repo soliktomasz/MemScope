@@ -12,6 +12,7 @@ using MemoryProfiler.App.ViewModels;
 using MemoryProfiler.Diagnostics.Dumps;
 using MemoryProfiler.Diagnostics.Processes;
 using MemoryProfiler.Diagnostics.Sessions;
+using MemoryProfiler.Storage.Storage;
 
 namespace MemoryProfiler.App;
 
@@ -39,9 +40,11 @@ public partial class App : Application
                 new ClrMdObjectReferenceService(),
                 new GcRootService(),
                 new DominatorTreeService(),
-                new SnapshotComparisonService());
+                new SnapshotComparisonService(),
+                new JsonSessionRepository());
             mainWindow = new MainWindow(viewModel);
             desktop.MainWindow = mainWindow;
+            _ = viewModel.InitializeAsync();
         }
 
         base.OnFrameworkInitializationCompleted();

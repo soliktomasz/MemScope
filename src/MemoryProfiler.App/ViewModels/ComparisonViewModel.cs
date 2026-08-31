@@ -16,6 +16,7 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
     private readonly IDominatorTreeService? _dominatorService;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly Func<Task>? _close;
+    private readonly Func<string, string, Task>? _comparisonCompleted;
     private readonly CancellationTokenSource _disposeCancellation = new();
     private readonly AsyncCommand _closeCommand;
     private readonly AsyncCommand _pickBeforeCommand;
@@ -40,7 +41,8 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
         IUiDispatcher uiDispatcher,
         IDumpFilePicker filePicker,
         Func<Task>? close = null,
-        IDominatorTreeService? dominatorService = null)
+        IDominatorTreeService? dominatorService = null,
+        Func<string, string, Task>? comparisonCompleted = null)
     {
         ArgumentNullException.ThrowIfNull(loader);
         ArgumentNullException.ThrowIfNull(comparisonService);
@@ -52,6 +54,7 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
         _filePicker = filePicker;
         _dominatorService = dominatorService;
         _close = close;
+        _comparisonCompleted = comparisonCompleted;
         _closeCommand = new AsyncCommand(close ?? (() => Task.CompletedTask));
         _pickBeforeCommand = new AsyncCommand(PickBeforeAsync);
         _pickAfterCommand = new AsyncCommand(PickAfterAsync);
@@ -168,6 +171,19 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
             setPath: path => AfterPath = path);
     }
 
+    public async Task LoadAsync(string beforePath, string afterPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(beforePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(afterPath);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        await PublishAsync(() =>
+        {
+            BeforePath = beforePath;
+            AfterPath = afterPath;
+        }).ConfigureAwait(false);
+        await CompareAsync().ConfigureAwait(false);
+    }
+
     public async Task CompareAsync()
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
@@ -254,6 +270,11 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
                 OnPropertyChanged(nameof(StatusText));
                 NotifyDisplayStateChanged();
             }).ConfigureAwait(false);
+            if (version == Volatile.Read(ref _compareVersion))
+            {
+                await NotifyComparisonCompletedAsync(beforePath, afterPath)
+                    .ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -298,6 +319,26 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
             {
                 // Already released by CancelCompare.
             }
+        }
+    }
+
+    private async Task NotifyComparisonCompletedAsync(
+        string beforePath,
+        string afterPath)
+    {
+        if (_comparisonCompleted is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _comparisonCompleted(beforePath, afterPath).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Session-history persistence is best effort and must not turn a
+            // successful comparison into an analysis failure.
         }
     }
 

@@ -137,6 +137,63 @@ public sealed class LiveSessionViewModelTests
     }
 
     [Fact]
+    public async Task SuccessfulCaptureReportsTheCapturedPathOnce()
+    {
+        var session = new StubSession(waitForCancellation: true);
+        var capturedPaths = new List<string>();
+        await using var viewModel = new LiveSessionViewModel(
+            4217,
+            "SampleService",
+            new StubSessionFactory(session),
+            ImmediateUiDispatcher.Instance,
+            dumpCaptureService: new RecordingDumpCaptureService(),
+            dumpDestinationPicker: new StubDumpDestinationPicker(Path.GetTempPath()),
+            snapshotCaptured: path =>
+            {
+                capturedPaths.Add(path);
+                return Task.CompletedTask;
+            });
+        var run = viewModel.StartAsync();
+        await session.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await viewModel.CaptureSnapshotAsync();
+
+        Assert.Collection(
+            capturedPaths,
+            path => Assert.EndsWith("snapshot.dmp", path));
+        await viewModel.DisconnectAsync();
+        await run;
+    }
+
+    [Fact]
+    public async Task FailedCaptureDoesNotReportAPath()
+    {
+        var session = new StubSession(waitForCancellation: true);
+        var callbackCount = 0;
+        await using var viewModel = new LiveSessionViewModel(
+            4217,
+            "SampleService",
+            new StubSessionFactory(session),
+            ImmediateUiDispatcher.Instance,
+            dumpCaptureService: new ThrowingDumpCaptureService(
+                new IOException("Disk full.")),
+            dumpDestinationPicker: new StubDumpDestinationPicker(Path.GetTempPath()),
+            snapshotCaptured: _ =>
+            {
+                callbackCount++;
+                return Task.CompletedTask;
+            });
+        var run = viewModel.StartAsync();
+        await session.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await viewModel.CaptureSnapshotAsync();
+
+        Assert.Equal(0, callbackCount);
+        await viewModel.DisconnectAsync();
+        await run;
+    }
+
+    [Fact]
     public async Task AnalyzeIsUnavailableWithoutACapturedSnapshotOrCallback()
     {
         var session = new StubSession(waitForCancellation: true);
@@ -760,6 +817,16 @@ public sealed class LiveSessionViewModelTests
             WasCalled = true;
             return Task.FromResult(Path.Combine(destinationDirectory, "snapshot.dmp"));
         }
+    }
+
+    private sealed class ThrowingDumpCaptureService(Exception exception)
+        : IDumpCaptureService
+    {
+        public Task<string> CaptureAsync(
+            int processId,
+            string destinationDirectory,
+            CancellationToken cancellationToken = default) =>
+            Task.FromException<string>(exception);
     }
 
     private sealed class ControllableDumpCaptureService : IDumpCaptureService

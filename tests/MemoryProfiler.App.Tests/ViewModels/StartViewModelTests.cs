@@ -14,6 +14,7 @@ using MemoryProfiler.Contracts.Processes;
 using MemoryProfiler.Diagnostics.Dumps;
 using MemoryProfiler.Diagnostics.Processes;
 using MemoryProfiler.Diagnostics.Sessions;
+using MemoryProfiler.Storage.Storage;
 using Xunit;
 
 namespace MemoryProfiler.App.Tests.ViewModels;
@@ -704,6 +705,148 @@ public sealed class StartViewModelTests
         Assert.Null(start.Snapshot);
     }
 
+    [Fact]
+    public async Task InitializeRestoresNewestRecentSessionsFirst()
+    {
+        var older = new DateTimeOffset(2026, 8, 30, 10, 0, 0, TimeSpan.Zero);
+        var newer = older.AddDays(1);
+        var repository = new InMemorySessionRepository(
+            SessionCatalog.Empty
+                .WithRecentInvestigation(new RecentInvestigation(
+                    "/dumps/api.dmp", "Api", older))
+                .WithComparison(new ComparisonPair(
+                    "/dumps/before.dmp", "/dumps/after.dmp", newer)));
+        await using var start = CreatePersistentStart(repository);
+
+        await start.InitializeAsync();
+
+        Assert.False(start.IsSessionHistoryLoading);
+        Assert.True(start.HasRecentSessions);
+        Assert.Collection(
+            start.RecentSessions,
+            row => Assert.Equal(RecentSessionKind.Comparison, row.Kind),
+            row =>
+            {
+                Assert.Equal(RecentSessionKind.Snapshot, row.Kind);
+                Assert.Equal("Api", row.Title);
+            });
+    }
+
+    [Fact]
+    public async Task SuccessfulSnapshotLoadPersistsMetadataAndInvestigation()
+    {
+        var repository = new InMemorySessionRepository(SessionCatalog.Empty);
+        await using var start = CreatePersistentStart(repository);
+
+        await start.OpenDumpAsync();
+
+        Assert.NotNull(start.Snapshot);
+        var dump = Assert.Single(repository.Catalog.RecentDumps);
+        Assert.Equal("Sample.Process", dump.ProcessName);
+        Assert.Equal(12_345, dump.ObjectCount);
+        Assert.Equal(4_000_000UL, dump.HeapSize);
+        Assert.Single(repository.Catalog.RecentInvestigations);
+        Assert.True(start.HasRecentSessions);
+    }
+
+    [Fact]
+    public async Task StorageFailureDoesNotCloseASuccessfullyLoadedSnapshot()
+    {
+        var repository = new InMemorySessionRepository(SessionCatalog.Empty)
+        {
+            SaveException = new IOException("History directory is read-only.")
+        };
+        await using var start = CreatePersistentStart(repository);
+
+        await start.OpenDumpAsync();
+
+        Assert.True(start.Snapshot!.HasSnapshot);
+        Assert.True(start.HasSessionHistoryError);
+        Assert.Contains("History directory is read-only.", start.SessionHistoryErrorMessage);
+    }
+
+    [Fact]
+    public async Task RecentSnapshotRowReopensItsStoredPath()
+    {
+        var repository = new InMemorySessionRepository(
+            SessionCatalog.Empty.WithRecentInvestigation(new RecentInvestigation(
+                "/dumps/stored.dmp", "Stored Api", DateTimeOffset.UnixEpoch)));
+        var loader = new StubHeapSnapshotLoader(SampleSnapshot());
+        await using var start = CreatePersistentStart(repository, loader: loader);
+        await start.InitializeAsync();
+
+        await Assert.Single(start.RecentSessions).OpenAsync();
+
+        Assert.Equal("/dumps/stored.dmp", loader.Path);
+        Assert.True(start.IsSnapshotVisible);
+    }
+
+    [Fact]
+    public async Task RecentComparisonRowReopensAndRecordsItsPair()
+    {
+        var repository = new InMemorySessionRepository(
+            SessionCatalog.Empty.WithComparison(new ComparisonPair(
+                "/dumps/before.dmp",
+                "/dumps/after.dmp",
+                DateTimeOffset.UnixEpoch)));
+        await using var start = CreatePersistentStart(repository);
+        await start.InitializeAsync();
+
+        await Assert.Single(start.RecentSessions).OpenAsync();
+
+        Assert.True(start.Comparison!.HasCompared);
+        var pair = Assert.Single(repository.Catalog.ComparisonPairs);
+        Assert.Equal("/dumps/before.dmp", pair.BeforePath);
+        Assert.Equal("/dumps/after.dmp", pair.AfterPath);
+        Assert.True(repository.SaveCount > 0);
+    }
+
+    [Fact]
+    public async Task SuccessfulLiveCapturePersistsTheProcessAndDumpPath()
+    {
+        var repository = new InMemorySessionRepository(SessionCatalog.Empty);
+        var picker = new ProcessPickerViewModel(
+            StubDiscovery.Returning(new ProcessInfo(4217, "SampleService", "10.0.0")));
+        var session = new BlockingLiveSession();
+        await using var start = CreatePersistentStart(
+            repository,
+            processPicker: picker,
+            session: session);
+        await picker.RefreshAsync();
+        picker.SelectedProcess = Assert.Single(picker.Processes);
+        var liveRun = start.StartLiveSessionAsync();
+        await session.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await start.LiveSession!.CaptureSnapshotAsync();
+
+        var dump = Assert.Single(repository.Catalog.RecentDumps);
+        Assert.Equal("SampleService", dump.ProcessName);
+        Assert.Equal(4217, dump.ProcessId);
+        Assert.EndsWith("snapshot.dmp", dump.Path);
+        await start.CloseLiveSessionAsync();
+        await liveRun;
+    }
+
+    private static StartViewModel CreatePersistentStart(
+        ISessionRepository repository,
+        IHeapSnapshotLoader? loader = null,
+        ProcessPickerViewModel? processPicker = null,
+        ILiveDiagnosticsSession? session = null) =>
+        new(
+            processPicker ?? new ProcessPickerViewModel(StubDiscovery.Returning()),
+            new StubLiveSessionFactory(session ?? new StubLiveSession()),
+            ImmediateUiDispatcher.Instance,
+            new RecordingDumpCaptureService(),
+            new StubDumpDestinationPicker(Path.GetTempPath()),
+            loader ?? new StubHeapSnapshotLoader(SampleSnapshot()),
+            new StubDumpFilePicker("/tmp/sample.dmp"),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            new StubDominatorService(new DominatorAnalysisResult([], [])),
+            new SnapshotComparisonService(),
+            repository);
+
     private static HeapSnapshot SampleSnapshot() =>
         new()
         {
@@ -892,5 +1035,34 @@ public sealed class StartViewModelTests
             IProgress<double>? progress = null,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(result);
+    }
+
+    private sealed class InMemorySessionRepository(SessionCatalog catalog)
+        : ISessionRepository
+    {
+        public SessionCatalog Catalog { get; private set; } = catalog;
+
+        public Exception? SaveException { get; init; }
+
+        public int SaveCount { get; private set; }
+
+        public Task<SessionCatalog> LoadAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(Catalog);
+        }
+
+        public Task SaveAsync(
+            SessionCatalog updatedCatalog,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            SaveCount++;
+            Catalog = updatedCatalog;
+            return SaveException is null
+                ? Task.CompletedTask
+                : Task.FromException(SaveException);
+        }
     }
 }
