@@ -6,6 +6,7 @@ using MemoryProfiler.Analysis.References;
 using MemoryProfiler.Analysis.Roots;
 using MemoryProfiler.App.Errors;
 using MemoryProfiler.App.Models;
+using MemoryProfiler.App.Navigation;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels.Objects;
 using MemoryProfiler.App.ViewModels.Types;
@@ -31,6 +32,77 @@ public sealed class SnapshotViewModelTests
 
     private static HeapTypeInfo Type(string name, string assembly, long count, ulong size) =>
         new(0x1000, name, assembly, count, size, null);
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (!condition())
+        {
+            await Task.Delay(10, timeout.Token);
+        }
+    }
+
+    [Fact]
+    public async Task DominatorCompletionFeedsTopRetainersWithObjectLevelResults()
+    {
+        var cache = new DominatorInfo(0x2000, "MyApp.Cache", 64, 400, 12);
+        var result = new DominatorAnalysisResult([cache], []);
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(Snapshot()),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            ImmediateUiDispatcher.Instance,
+            dominatorService: new StubDominatorService(result));
+
+        await viewModel.LoadAsync("sample.dmp");
+
+        await WaitUntilAsync(() => viewModel.TopRetainers.Retainers.Count > 0);
+        Assert.Equal(cache, viewModel.TopRetainers.Retainers[0].Info);
+    }
+
+    [Fact]
+    public async Task InspectObjectNavigatesToObjectDetailsAtTheSameAddress()
+    {
+        var cache = new DominatorInfo(0x2000, "MyApp.Cache", 64, 400, 12);
+        var result = new DominatorAnalysisResult([cache], []);
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(Snapshot()),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            ImmediateUiDispatcher.Instance,
+            dominatorService: new StubDominatorService(result));
+
+        await viewModel.LoadAsync("sample.dmp");
+        await viewModel.InspectObjectAsync(new HeapObjectRowViewModel(
+            new HeapObjectInfo(0x2000, 0x1000, "MyApp.Cache", 64, "Gen2")));
+
+        Assert.Equal(0x2000UL, viewModel.ObjectDetails.ObjectAddress);
+        Assert.Equal(
+            new ObjectDetailsLocation(0x2000, "MyApp.Cache"),
+            viewModel.CurrentLocation);
+    }
+
+    [Fact]
+    public async Task RootOnlyGcPathRowCannotInspectAnObject()
+    {
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(Snapshot()),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            ImmediateUiDispatcher.Instance);
+
+        await viewModel.LoadAsync("sample.dmp");
+        var rootOnly = new GcRootRowViewModel(
+            0, true, false, "root", "Static field", "root", "Example.Root",
+            0, string.Empty, false);
+
+        await viewModel.InspectObjectAsync(rootOnly);
+
+        Assert.IsNotType<ObjectDetailsLocation>(viewModel.CurrentLocation);
+    }
 
     [Fact]
     public async Task CopyCommandsWriteTheSelectedInvestigationValue()

@@ -5,27 +5,40 @@ using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
 using MemoryProfiler.Analysis.Roots;
+using MemoryProfiler.Analysis.Values;
 using MemoryProfiler.App.Models;
 using MemoryProfiler.App.Errors;
 using MemoryProfiler.App.Navigation;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels.Objects;
 using MemoryProfiler.App.ViewModels.Overview;
+using MemoryProfiler.App.ViewModels.Retainers;
 using MemoryProfiler.App.ViewModels.Types;
 using MemoryProfiler.Contracts.Heap;
 
 namespace MemoryProfiler.App.ViewModels;
 
+public enum SnapshotAnalysisMode
+{
+    Types,
+    TopRetainers,
+}
+
 public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
 {
     private readonly IHeapSnapshotLoader _loader;
     private readonly IDominatorTreeService? _dominatorService;
+    private readonly IHeapObjectValueService? _objectValueService;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly CancellationTokenSource _loadCancellation = new();
     private readonly AsyncCommand _closeCommand;
     private readonly RelayCommand<object> _showOutgoingReferencesCommand;
     private readonly RelayCommand<object> _showIncomingReferencesCommand;
     private readonly RelayCommand<object> _showPathToRootCommand;
+    private readonly RelayCommand _showTypesCommand;
+    private readonly RelayCommand _showTopRetainersCommand;
+    private readonly AsyncCommand<object> _inspectObjectCommand;
+    private readonly AsyncCommand<HeapFieldValueRowViewModel> _copyFieldValueCommand;
     private readonly InvestigationNavigationService _navigation = new();
     private readonly RelayCommand _goBackCommand;
     private readonly RelayCommand _goForwardCommand;
@@ -46,6 +59,8 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
     private string _retainedSizeStatusText = string.Empty;
     private int _disposed;
     private bool _suppressTypeNavigation;
+    private DominatorAnalysisResult? _dominatorResult;
+    private SnapshotAnalysisMode _analysisMode = SnapshotAnalysisMode.Types;
 
     internal SnapshotViewModel(
         IHeapSnapshotLoader loader,
@@ -55,7 +70,8 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         IUiDispatcher uiDispatcher,
         Func<Task>? close = null,
         IDominatorTreeService? dominatorService = null,
-        IClipboardService? clipboardService = null)
+        IClipboardService? clipboardService = null,
+        IHeapObjectValueService? objectValueService = null)
     {
         ArgumentNullException.ThrowIfNull(loader);
         ArgumentNullException.ThrowIfNull(objectRepository);
@@ -64,6 +80,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         ArgumentNullException.ThrowIfNull(uiDispatcher);
         _loader = loader;
         _dominatorService = dominatorService;
+        _objectValueService = objectValueService;
         _uiDispatcher = uiDispatcher;
         _clipboard = new InvestigationClipboard(clipboardService ?? new NullClipboardService());
         _closeCommand = new AsyncCommand(close ?? (() => Task.CompletedTask));
@@ -76,6 +93,15 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         _showPathToRootCommand = new RelayCommand<object>(
             ShowPathToRoot,
             parameter => HasSnapshot && CanNavigateFrom(parameter));
+        _showTypesCommand = new RelayCommand(() => AnalysisMode = SnapshotAnalysisMode.Types);
+        _showTopRetainersCommand = new RelayCommand(
+            () => AnalysisMode = SnapshotAnalysisMode.TopRetainers);
+        _inspectObjectCommand = new AsyncCommand<object>(
+            InspectObjectAsync,
+            parameter => HasSnapshot && CanInspectFrom(parameter));
+        _copyFieldValueCommand = new AsyncCommand<HeapFieldValueRowViewModel>(
+            row => _clipboard.CopyFieldValueAsync(row!),
+            row => row is not null && row.CanCopyValue);
         _goBackCommand = new RelayCommand(
             _navigation.GoBack,
             () => _navigation.CanGoBack);
@@ -98,6 +124,10 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         ObjectInstances = new ObjectInstancesViewModel(objectRepository, uiDispatcher);
         ObjectReferences = new ObjectReferencesViewModel(referenceService, uiDispatcher);
         GcRoots = new GcRootsViewModel(gcRootService, uiDispatcher);
+        TopRetainers = new TopRetainersViewModel(uiDispatcher);
+        ObjectDetails = new ObjectDetailsViewModel(
+            objectValueService ?? new NullObjectValueService(),
+            uiDispatcher);
         Types.PropertyChanged += OnTypesPropertyChanged;
         _navigation.StateChanged += OnNavigationStateChanged;
     }
@@ -110,7 +140,42 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
 
     public GcRootsViewModel GcRoots { get; }
 
+    public TopRetainersViewModel TopRetainers { get; }
+
+    public ObjectDetailsViewModel ObjectDetails { get; }
+
     public System.Windows.Input.ICommand CloseCommand => _closeCommand;
+
+    public System.Windows.Input.ICommand ShowTypesCommand => _showTypesCommand;
+
+    public System.Windows.Input.ICommand ShowTopRetainersCommand => _showTopRetainersCommand;
+
+    public System.Windows.Input.ICommand InspectObjectCommand => _inspectObjectCommand;
+
+    public System.Windows.Input.ICommand CopyFieldValueCommand => _copyFieldValueCommand;
+
+    public SnapshotAnalysisMode AnalysisMode
+    {
+        get => _analysisMode;
+        set
+        {
+            if (SetProperty(ref _analysisMode, value))
+            {
+                OnPropertyChanged(nameof(IsTypesMode));
+                OnPropertyChanged(nameof(IsTopRetainersMode));
+            }
+        }
+    }
+
+    public bool IsTypesMode => _analysisMode == SnapshotAnalysisMode.Types;
+
+    public bool IsTopRetainersMode => _analysisMode == SnapshotAnalysisMode.TopRetainers;
+
+    public bool IsInstancesPaneVisible =>
+        _navigation.CurrentLocation is not ObjectDetailsLocation;
+
+    public bool IsObjectDetailsPaneVisible =>
+        _navigation.CurrentLocation is ObjectDetailsLocation;
 
     public System.Windows.Input.ICommand ShowOutgoingReferencesCommand =>
         _showOutgoingReferencesCommand;
@@ -139,6 +204,8 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
     public bool CanGoBack => _navigation.CanGoBack;
 
     public bool CanGoForward => _navigation.CanGoForward;
+
+    public InvestigationLocation? CurrentLocation => _navigation.CurrentLocation;
 
     public bool IsLoading
     {
@@ -260,6 +327,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         {
             _snapshot = null;
             SetError(null);
+            _dominatorResult = null;
             _retainedSizeProgress = 0;
             _retainedSizeStatusText = string.Empty;
             _isComputingRetainedSizes = false;
@@ -277,6 +345,8 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         // shown belong to the old dump and must not survive it.
         await ObjectReferences.ClearAsync().ConfigureAwait(false);
         await GcRoots.ClearAsync().ConfigureAwait(false);
+        await TopRetainers.ClearAsync().ConfigureAwait(false);
+        await ObjectDetails.ClearAsync().ConfigureAwait(false);
 
         try
         {
@@ -366,6 +436,8 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         await ObjectInstances.DisposeAsync();
         await ObjectReferences.DisposeAsync();
         await GcRoots.DisposeAsync();
+        await TopRetainers.DisposeAsync();
+        await ObjectDetails.DisposeAsync();
     }
 
     private void OnTypesPropertyChanged(object? sender, PropertyChangedEventArgs eventArgs)
@@ -416,6 +488,8 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
                 OnPropertyChanged(nameof(HasRetainedSizeError));
             }).ConfigureAwait(false);
 
+            await TopRetainers.BeginLoadingAsync().ConfigureAwait(false);
+
             var result = await _dominatorService!
                 .ComputeDominatorsAsync(
                     snapshot,
@@ -430,6 +504,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
                     return;
                 }
 
+                _dominatorResult = result;
                 Types.SetRetainedSizes(result.TypeRetainedSizes);
                 _retainedSizeStatusText = string.Empty;
                 _isComputingRetainedSizes = false;
@@ -438,6 +513,8 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
                 OnPropertyChanged(nameof(ShowRetainedSizeProgress));
                 OnPropertyChanged(nameof(HasRetainedSizeError));
             }).ConfigureAwait(false);
+
+            await TopRetainers.SetResultAsync(result, token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -461,6 +538,11 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
                 OnPropertyChanged(nameof(ShowRetainedSizeProgress));
                 OnPropertyChanged(nameof(HasRetainedSizeError));
             }).ConfigureAwait(false);
+
+            if (version == Volatile.Read(ref _retainedSizeVersion))
+            {
+                await TopRetainers.SetUnavailableAsync().ConfigureAwait(false);
+            }
         }
         finally
         {
@@ -618,6 +700,30 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         }
     }
 
+    private async Task ShowObjectDetailsAsync(
+        HeapSnapshot snapshot,
+        ulong objectAddress,
+        string objectTypeName)
+    {
+        try
+        {
+            await ObjectDetails.ShowAsync(
+                snapshot,
+                objectAddress,
+                objectTypeName,
+                _dominatorResult,
+                knownDominator: null).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer navigation or snapshot closure superseded this one.
+        }
+        catch (ObjectDisposedException)
+        {
+            // The snapshot was closed while the command was executing.
+        }
+    }
+
     private void ShowReferences(object? parameter, ReferenceDirection direction)
     {
         var snapshot = _snapshot;
@@ -635,6 +741,9 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         _goForwardCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanGoBack));
         OnPropertyChanged(nameof(CanGoForward));
+        OnPropertyChanged(nameof(CurrentLocation));
+        OnPropertyChanged(nameof(IsInstancesPaneVisible));
+        OnPropertyChanged(nameof(IsObjectDetailsPaneVisible));
 
         if (_navigation.CurrentLocation is { } location)
         {
@@ -681,6 +790,15 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
                         snapshot,
                         roots.ObjectTypeName,
                         roots.ObjectAddress).ConfigureAwait(false);
+                    break;
+                case ObjectDetailsLocation details:
+                    await ObjectInstances.ClearAsync().ConfigureAwait(false);
+                    await ObjectReferences.ClearAsync().ConfigureAwait(false);
+                    await GcRoots.ClearAsync().ConfigureAwait(false);
+                    await ShowObjectDetailsAsync(
+                        snapshot,
+                        details.ObjectAddress,
+                        details.ObjectTypeName).ConfigureAwait(false);
                     break;
             }
         }
@@ -735,6 +853,19 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
             HeapObjectRowViewModel => true,
             ObjectReferenceRowViewModel { CanNavigate: true } => true,
             GcRootRowViewModel { CanNavigate: true } => true,
+            TopRetainerRowViewModel => true,
+            HeapFieldValueRowViewModel { CanNavigate: true } => true,
+            _ => false,
+        };
+
+    private static bool CanInspectFrom(object? parameter) =>
+        parameter switch
+        {
+            HeapObjectRowViewModel => true,
+            ObjectReferenceRowViewModel { CanNavigate: true } => true,
+            GcRootRowViewModel { CanNavigate: true } => true,
+            TopRetainerRowViewModel => true,
+            HeapFieldValueRowViewModel { CanNavigate: true } => true,
             _ => false,
         };
 
@@ -744,6 +875,8 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
             HeapObjectRowViewModel => true,
             ObjectReferenceRowViewModel { CanNavigate: true } => true,
             GcRootRowViewModel { CanNavigate: true } => true,
+            TopRetainerRowViewModel => true,
+            HeapFieldValueRowViewModel { CanNavigate: true } => true,
             _ => false,
         };
 
@@ -753,6 +886,8 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
             HeapObjectRowViewModel row => _clipboard.CopyObjectAddressAsync(row),
             ObjectReferenceRowViewModel row => _clipboard.CopyObjectAddressAsync(row),
             GcRootRowViewModel row => _clipboard.CopyObjectAddressAsync(row),
+            TopRetainerRowViewModel row => _clipboard.CopyObjectAddressAsync(row),
+            HeapFieldValueRowViewModel row => _clipboard.CopyObjectAddressAsync(row),
             _ => Task.CompletedTask,
         };
 
@@ -775,11 +910,31 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
                 address = pathRow.EndpointAddress;
                 typeName = pathRow.EndpointTypeName;
                 return true;
+            case TopRetainerRowViewModel retainer:
+                address = retainer.Address;
+                typeName = retainer.TypeName;
+                return true;
+            case HeapFieldValueRowViewModel field when field.CanNavigate:
+                address = field.ReferencedObjectAddress!.Value;
+                typeName = field.ReferencedObjectTypeName ?? string.Empty;
+                return true;
             default:
                 address = 0;
                 typeName = string.Empty;
                 return false;
         }
+    }
+
+    public async Task InspectObjectAsync(object? parameter)
+    {
+        var snapshot = _snapshot;
+        if (snapshot is null || !TryResolveEndpoint(parameter, out var address, out var typeName))
+        {
+            return;
+        }
+
+        _navigation.Navigate(new ObjectDetailsLocation(address, typeName));
+        await Task.CompletedTask;
     }
 
     private async Task PublishAsync(Action action)

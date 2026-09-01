@@ -6,6 +6,7 @@ using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
 using MemoryProfiler.Analysis.Roots;
+using MemoryProfiler.Analysis.Values;
 using MemoryProfiler.App.Errors;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels;
@@ -401,9 +402,29 @@ public sealed class StartViewModelTests
             new StubHeapObjectRepository([]),
             new StubObjectReferenceService([]),
             new StubGcRootService([]),
-            new StubDominatorService(new DominatorAnalysisResult([], [])));
+            new StubDominatorService(new DominatorAnalysisResult([], [])),
+            objectValueService: new StubValueService());
 
         Assert.True(start.OpenDumpCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task OpenDumpIsDisabledWhenTheValueServiceIsMissing()
+    {
+        using var start = new StartViewModel(
+            new ProcessPickerViewModel(StubDiscovery.Returning()),
+            new StubLiveSessionFactory(new StubLiveSession()),
+            ImmediateUiDispatcher.Instance,
+            new RecordingDumpCaptureService(),
+            new StubDumpDestinationPicker(Path.GetTempPath()),
+            new StubHeapSnapshotLoader(SampleSnapshot()),
+            new StubDumpFilePicker("/tmp/sample.dmp"),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            new StubDominatorService(new DominatorAnalysisResult([], [])));
+
+        Assert.False(start.OpenDumpCommand.CanExecute(null));
     }
 
     [Fact]
@@ -1040,6 +1061,23 @@ public sealed class StartViewModelTests
             IProgress<double>? progress = null,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(result);
+    }
+
+    private sealed class StubValueService : IHeapObjectValueService
+    {
+        public Task<HeapObjectValueResult> ReadAsync(
+            HeapSnapshot snapshot,
+            ulong objectAddress,
+            ObjectValueReadOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new HeapObjectValueResult(
+                new HeapObjectInfo(objectAddress, 0, string.Empty, 0, "Unknown"),
+                [],
+                0,
+                false));
+        }
     }
 
     private sealed class InMemorySessionRepository(SessionCatalog catalog)

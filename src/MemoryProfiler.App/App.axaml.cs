@@ -7,6 +7,7 @@ using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
 using MemoryProfiler.Analysis.Roots;
+using MemoryProfiler.Analysis.Values;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels;
 using MemoryProfiler.Diagnostics.Dumps;
@@ -42,7 +43,8 @@ public partial class App : Application
                 new DominatorTreeService(),
                 new SnapshotComparisonService(),
                 new JsonSessionRepository(),
-                new AvaloniaClipboardService(() => mainWindow));
+                new AvaloniaClipboardService(() => mainWindow),
+                new ClrMdHeapObjectValueService());
             mainWindow = new MainWindow(viewModel);
             desktop.MainWindow = mainWindow;
             _ = viewModel.InitializeAsync();

@@ -1,5 +1,6 @@
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels.Objects;
+using MemoryProfiler.App.ViewModels.Retainers;
 using MemoryProfiler.App.ViewModels.Types;
 
 namespace MemoryProfiler.App.ViewModels;
@@ -36,6 +37,22 @@ internal sealed class InvestigationClipboard(IClipboardService service)
     {
         ArgumentNullException.ThrowIfNull(row);
         return service.SetTextAsync(row.AddressDisplay, cancellationToken);
+    }
+
+    public Task CopyObjectAddressAsync(
+        TopRetainerRowViewModel row,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        return service.SetTextAsync(row.AddressDisplay, cancellationToken);
+    }
+
+    public Task CopyObjectAddressAsync(
+        HeapFieldValueRowViewModel row,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        return service.SetTextAsync(row.ReferencedAddressDisplay, cancellationToken);
     }
 
     public Task CopyGcRootPathAsync(

@@ -16,3 +16,7 @@ public sealed record ObjectReferencesLocation(
 public sealed record GcRootsLocation(
     ulong ObjectAddress,
     string ObjectTypeName) : InvestigationLocation;
+
+public sealed record ObjectDetailsLocation(
+    ulong ObjectAddress,
+    string ObjectTypeName) : InvestigationLocation;
