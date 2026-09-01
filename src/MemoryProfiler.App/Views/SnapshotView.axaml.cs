@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using MemoryProfiler.App.ViewModels;
 using MemoryProfiler.App.ViewModels.Objects;
+using MemoryProfiler.App.ViewModels.Retainers;
 
 namespace MemoryProfiler.App.Views;
 
@@ -27,6 +28,24 @@ public partial class SnapshotView : UserControl
             DataContext is SnapshotViewModel viewModel)
         {
             viewModel.ShowOutgoingReferences(row);
+        }
+    }
+
+    private void OnTopRetainersDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (e.Source is Control { DataContext: TopRetainerRowViewModel row } &&
+            DataContext is SnapshotViewModel viewModel)
+        {
+            _ = viewModel.InspectObjectAsync(row);
+        }
+    }
+
+    private void OnObjectDetailsDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (e.Source is Control { DataContext: HeapFieldValueRowViewModel { CanNavigate: true } row } &&
+            DataContext is SnapshotViewModel viewModel)
+        {
+            _ = viewModel.InspectObjectAsync(row);
         }
     }
 }

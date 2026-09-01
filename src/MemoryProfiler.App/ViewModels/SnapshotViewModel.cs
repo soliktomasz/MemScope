@@ -163,6 +163,11 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
             {
                 OnPropertyChanged(nameof(IsTypesMode));
                 OnPropertyChanged(nameof(IsTopRetainersMode));
+                OnPropertyChanged(nameof(ShowTypesTable));
+                OnPropertyChanged(nameof(ShowTypesEmpty));
+                OnPropertyChanged(nameof(ShowTypesNoFilteredTypes));
+                _showTypesCommand.NotifyCanExecuteChanged();
+                _showTopRetainersCommand.NotifyCanExecuteChanged();
             }
         }
     }
@@ -240,6 +245,12 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
     public bool ShowNoFilteredTypes => IsReady && !Types.HasNoTypes && Types.HasNoFilteredTypes;
 
     public bool ShowTable => IsReady && Types.HasFilteredTypes;
+
+    public bool ShowTypesTable => IsTypesMode && ShowTable;
+
+    public bool ShowTypesEmpty => IsTypesMode && ShowEmpty;
+
+    public bool ShowTypesNoFilteredTypes => IsTypesMode && ShowNoFilteredTypes;
 
     public bool IsComputingRetainedSizes => _isComputingRetainedSizes;
 
@@ -970,6 +981,9 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         OnPropertyChanged(nameof(ShowEmpty));
         OnPropertyChanged(nameof(ShowNoFilteredTypes));
         OnPropertyChanged(nameof(ShowTable));
+        OnPropertyChanged(nameof(ShowTypesTable));
+        OnPropertyChanged(nameof(ShowTypesEmpty));
+        OnPropertyChanged(nameof(ShowTypesNoFilteredTypes));
     }
 
     // Reports service progress on the background thread; the callback routes
