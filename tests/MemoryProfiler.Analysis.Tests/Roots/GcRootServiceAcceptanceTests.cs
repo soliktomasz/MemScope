@@ -2,7 +2,9 @@ using System.Diagnostics;
 using Microsoft.Diagnostics.NETCore.Client;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
+using MemoryProfiler.Analysis.References;
 using MemoryProfiler.Analysis.Roots;
+using MemoryProfiler.Contracts.Heap;
 using Xunit;
 
 namespace MemoryProfiler.Analysis.Tests.Roots;
@@ -35,24 +37,40 @@ public sealed class GcRootServiceAcceptanceTests
                 .LoadAsync(destination, timeout.Token);
             var service = new GcRootService();
             var repository = new ClrMdHeapObjectRepository();
+            var references = new ClrMdObjectReferenceService();
 
-            // A 64 KiB chunk the target allocated and retained inside its
-            // List<byte[]>: it must be reported as reachable from a GC root,
-            // never as garbage. The target may have produced several chunks
-            // before capture, so the largest one is used.
+            // Select a 64 KiB chunk through the target's List<byte[]> rather
+            // than by global size; runtimes may own larger byte arrays that
+            // are unrelated to the fixture's retention graph.
             var byteArrayType = Assert.Single(
                 snapshot.Types, type => type.Name == "System.Byte[]");
             var chunks = await repository.GetInstancesAsync(
                 snapshot, byteArrayType.MethodTable, timeout.Token);
-            var matching = chunks
+            var chunkAddresses = chunks
                 .Where(instance => instance.Size >= 64 * 1024)
-                .OrderByDescending(instance => instance.Size)
-                .ToArray();
-            Assert.NotEmpty(matching);
-            var chunk = matching[0];
+                .Select(instance => instance.Address)
+                .ToHashSet();
+            var listType = Assert.Single(
+                snapshot.Types,
+                type => type.Name == "System.Collections.Generic.List<System.Byte[]>");
+            var list = Assert.Single(await repository.GetInstancesAsync(
+                snapshot, listType.MethodTable, timeout.Token));
+            var listOutgoing = await references.GetOutgoingReferencesAsync(
+                snapshot, list.Address, timeout.Token);
+            var items = Assert.Single(
+                listOutgoing,
+                reference => reference.Kind == ReferenceKind.Field &&
+                    reference.Name == "_items");
+            var itemsOutgoing = await references.GetOutgoingReferencesAsync(
+                snapshot, items.TargetAddress, timeout.Token);
+            var chunkAddress = itemsOutgoing
+                .Where(reference => reference.Kind == ReferenceKind.ArrayElement)
+                .Select(reference => reference.TargetAddress)
+                .FirstOrDefault(chunkAddresses.Contains);
+            Assert.NotEqual(0UL, chunkAddress);
 
             var roots = await service.FindRootsAsync(
-                snapshot, chunk.Address, timeout.Token);
+                snapshot, chunkAddress, timeout.Token);
 
             Assert.NotEmpty(roots);
 
@@ -60,11 +78,11 @@ public sealed class GcRootServiceAcceptanceTests
                 roots,
                 root =>
                 {
-                    Assert.Equal(chunk.Address, root.ObjectAddress);
+                    Assert.Equal(chunkAddress, root.ObjectAddress);
                     Assert.False(string.IsNullOrWhiteSpace(root.Kind));
                 });
 
-            // The target's main thread keeps the chunk alive through its local
+            // The target's static holder keeps the chunk alive through its
             // list: the profiler must surface a well-formed chain from a root
             // down to the chunk.
             var chainRoots = roots
@@ -73,7 +91,7 @@ public sealed class GcRootServiceAcceptanceTests
             Assert.NotEmpty(chainRoots);
             var chainRoot = chainRoots[0];
             Assert.Equal(chainRoot.RootAddress, chainRoot.Path![0].SourceAddress);
-            Assert.Equal(chunk.Address, chainRoot.Path[^1].TargetAddress);
+            Assert.Equal(chunkAddress, chainRoot.Path[^1].TargetAddress);
             for (var index = 1; index < chainRoot.Path.Count; index++)
             {
                 Assert.Equal(

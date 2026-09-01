@@ -19,11 +19,8 @@ public sealed class DominatorTreeServiceAcceptanceTests
 
         try
         {
-            fixture = await LiveTargetFixture.StartAsync();
+            fixture = await LiveTargetFixture.StartAsync(leakPhase: true);
             Environment.SetEnvironmentVariable("TMPDIR", fixture.SocketRoot);
-            // Let the target accumulate a healthy chunk set (one 64 KiB chunk
-            // every 50 ms) so the owner is unambiguous: ~40 chunks after 2 s.
-            await Task.Delay(TimeSpan.FromSeconds(2));
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
             var client = new DiagnosticsClient(fixture.ProcessId);
             await client.WriteDumpAsync(
@@ -41,19 +38,19 @@ public sealed class DominatorTreeServiceAcceptanceTests
                 cancellationToken: timeout.Token);
 
             // The target keeps every allocated 64 KiB chunk in one
-            // List<byte[]>, so the list object dominates the whole chunk
-            // graph: it must be the dominant retained object in the dump,
-            // retaining well over a megabyte across many objects.
-            var top = result.Dominators[0];
-            Assert.Equal(
-                "System.Collections.Generic.List<System.Byte[]>",
-                top.TypeName);
+            // List<byte[]>, so that list dominates the whole chunk graph.
+            // Runtime-owned objects may retain more memory on some platforms,
+            // so locate the target's owner by type rather than global rank.
+            var owner = Assert.Single(
+                result.Dominators,
+                dominator => dominator.TypeName ==
+                    "System.Collections.Generic.List<System.Byte[]>");
             Assert.True(
-                top.RetainedSize >= 1_048_576,
-                $"Expected the chunk owner to retain at least 1 MB, was {top.RetainedSize}.");
+                owner.RetainedSize >= 1_048_576,
+                $"Expected the chunk owner to retain at least 1 MB, was {owner.RetainedSize}.");
             Assert.True(
-                top.RetainedObjectCount >= 16,
-                $"Expected the chunk owner to dominate at least 16 objects, was {top.RetainedObjectCount}.");
+                owner.RetainedObjectCount >= 16,
+                $"Expected the chunk owner to dominate at least 16 objects, was {owner.RetainedObjectCount}.");
 
             // The same owner leads the per-type view (a chunk captured mid-Add
             // may briefly sit outside the list, so the type list is checked

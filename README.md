@@ -22,6 +22,12 @@ Opening captured dumps and offline heap analysis are supported through the snaps
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - A target .NET process accessible to the current user
 
+## Platform support
+
+MemScope supports its core workflow on Windows, macOS, and Linux: attach to a local .NET process, collect live metrics, capture and open a dump, and inspect GC roots.
+
+Live diagnostics require permission to inspect the target process and normally require MemScope and the target to run as the same user on the same machine. Memory dumps use platform-specific formats and should be analyzed on the same operating-system and architecture family that created them. Automated tests cover the underlying diagnostics, analysis, and view-model behavior on all three operating systems; native file pickers and complete desktop interaction still require manual validation on each platform.
+
 ## Getting Started
 
 ```bash
