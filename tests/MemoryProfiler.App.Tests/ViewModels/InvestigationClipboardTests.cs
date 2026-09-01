@@ -52,6 +52,34 @@ public sealed class InvestigationClipboardTests
             service.Text);
     }
 
+    [Fact]
+    public async Task CopiesAFieldValueUsingItsCopyText()
+    {
+        var service = new RecordingClipboardService();
+        var clipboard = new InvestigationClipboard(service);
+        var row = new HeapFieldValueRowViewModel(new HeapFieldValue(
+            "_count", "System.Int32", HeapValueKind.Primitive, "42",
+            null, null, false, null, null));
+
+        await clipboard.CopyFieldValueAsync(row);
+
+        Assert.Equal("42", service.Text);
+    }
+
+    [Fact]
+    public async Task SkipsCopyForUnavailableFieldValues()
+    {
+        var service = new RecordingClipboardService();
+        var clipboard = new InvestigationClipboard(service);
+        var row = new HeapFieldValueRowViewModel(new HeapFieldValue(
+            "_state", "MyApp.State", HeapValueKind.Unavailable, null,
+            null, null, false, null, "Unsupported value type"));
+
+        await clipboard.CopyFieldValueAsync(row);
+
+        Assert.Null(service.Text);
+    }
+
     private sealed class RecordingClipboardService : IClipboardService
     {
         public string? Text { get; private set; }

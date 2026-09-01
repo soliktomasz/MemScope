@@ -45,6 +45,19 @@ internal sealed class InvestigationClipboard(IClipboardService service)
         ArgumentNullException.ThrowIfNull(row);
         return service.SetTextAsync(row.RootPathDisplay, cancellationToken);
     }
+
+    public Task CopyFieldValueAsync(
+        HeapFieldValueRowViewModel row,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        if (!row.CanCopyValue)
+        {
+            return Task.CompletedTask;
+        }
+
+        return service.SetTextAsync(row.CopyText, cancellationToken);
+    }
 }
 
 internal sealed class NullClipboardService : IClipboardService
