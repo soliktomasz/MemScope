@@ -3,6 +3,7 @@ using System.Globalization;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Roots;
 using MemoryProfiler.App.Errors;
+using MemoryProfiler.App.ViewModels.Overview;
 using MemoryProfiler.Contracts.Heap;
 
 namespace MemoryProfiler.App.ViewModels.Objects;
@@ -12,6 +13,7 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
     private readonly IGcRootService _service;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly CancellationTokenSource _disposeCancellation = new();
+    private readonly RelayCommand _cancelCommand;
     private ObservableCollection<GcRootRowViewModel> _rows = [];
     private ReadOnlyObservableCollection<GcRootRowViewModel> _rowsView;
     private CancellationTokenSource? _loadCancellation;
@@ -23,6 +25,7 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
     private bool _isLoading;
     private int _loadVersion;
     private int _disposed;
+    private GcRootRowViewModel? _selectedRow;
 
     internal GcRootsViewModel(
         IGcRootService service,
@@ -33,16 +36,23 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
         _service = service;
         _uiDispatcher = uiDispatcher;
         _rowsView = new ReadOnlyObservableCollection<GcRootRowViewModel>(_rows);
+        _cancelCommand = new RelayCommand(CancelLoad, () => IsLoading);
     }
 
     public ReadOnlyObservableCollection<GcRootRowViewModel> Rows => _rowsView;
+
+    public GcRootRowViewModel? SelectedRow
+    {
+        get => _selectedRow;
+        set => SetProperty(ref _selectedRow, value);
+    }
 
     public string ObjectTypeName => _objectTypeName;
 
     public string AddressDisplay =>
         _objectAddress == 0
             ? string.Empty
-            : "0x" + _objectAddress.ToString("X12", CultureInfo.InvariantCulture);
+            : MetricFormatting.Address(_objectAddress);
 
     public string SummaryDisplay
     {
@@ -57,7 +67,7 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
             {
                 0 => string.Empty,
                 1 => "1 path to root",
-                var count => $"{count.ToString("N0", CultureInfo.CurrentCulture)} paths to root",
+                var count => $"{MetricFormatting.Count(count)} paths to root",
             };
         }
     }
@@ -84,6 +94,8 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
     public bool ShowEmpty => HasSelection && !IsLoading && !HasError && _rootCount == 0;
 
     public bool ShowTable => HasSelection && !IsLoading && !HasError && _rootCount > 0;
+
+    public System.Windows.Input.ICommand CancelCommand => _cancelCommand;
 
     public async Task ShowAsync(
         HeapSnapshot snapshot,
@@ -129,6 +141,7 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
             // state, so a failed or pending load can never show stale results
             // or a summary that contradicts the inspected object.
             _rows = [];
+            SelectedRow = null;
             _rowsView = new ReadOnlyObservableCollection<GcRootRowViewModel>(_rows);
             OnPropertyChanged(nameof(Rows));
             OnPropertyChanged(nameof(ObjectTypeName));
@@ -216,6 +229,7 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
             _isLoading = false;
             _rootCount = 0;
             _rows = [];
+            SelectedRow = null;
             _rowsView = new ReadOnlyObservableCollection<GcRootRowViewModel>(_rows);
             OnPropertyChanged(nameof(Rows));
             OnPropertyChanged(nameof(ObjectTypeName));
@@ -262,6 +276,11 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
             var rootTypeDisplay = string.IsNullOrWhiteSpace(root.Name)
                 ? headTypeName
                 : root.Name;
+            var rootPathDisplay = BuildPathDisplay(
+                root,
+                rootTypeDisplay ?? "N/A",
+                headTypeName ?? "N/A",
+                objectTypeName);
 
             // The root itself is not a heap object: it identifies where the
             // path starts and is not navigable.
@@ -275,7 +294,8 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
                 typeNameDisplay: rootTypeDisplay ?? "N/A",
                 endpointAddress: 0,
                 endpointTypeName: string.Empty,
-                canNavigate: false));
+                canNavigate: false,
+                rootPathDisplay: rootPathDisplay));
 
             // The object the root references directly, then every hop down to
             // the queried object. A root that references the object directly
@@ -298,7 +318,8 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
                         typeNameDisplay: headTypeName ?? "N/A",
                         endpointAddress: root.RootAddress,
                         endpointTypeName: headTypeName ?? string.Empty,
-                        canNavigate: true));
+                        canNavigate: true,
+                        rootPathDisplay: rootPathDisplay));
                     continue;
                 }
 
@@ -316,11 +337,32 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
                     typeNameDisplay: edge.TargetTypeName ?? "N/A",
                     endpointAddress: edge.TargetAddress,
                     endpointTypeName: edge.TargetTypeName ?? string.Empty,
-                    canNavigate: true));
+                    canNavigate: true,
+                    rootPathDisplay: rootPathDisplay));
             }
         }
 
         return rows;
+    }
+
+    private static string BuildPathDisplay(
+        GcRootInfo root,
+        string rootTypeDisplay,
+        string headTypeName,
+        string objectTypeName)
+    {
+        var lines = new List<string>
+        {
+            $"GC Root: {rootTypeDisplay}",
+            $"{MetricFormatting.Address(root.RootAddress)} {headTypeName}",
+        };
+        if (root.Path is { } path)
+        {
+            lines.AddRange(path.Select(edge =>
+                $"{MetricFormatting.Address(edge.TargetAddress)} {edge.TargetTypeName ?? objectTypeName}"));
+        }
+
+        return string.Join(Environment.NewLine, lines);
     }
 
     private static string KindLabel(ReferenceKind kind) =>
@@ -388,5 +430,6 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
         OnPropertyChanged(nameof(ShowError));
         OnPropertyChanged(nameof(ShowEmpty));
         OnPropertyChanged(nameof(ShowTable));
+        _cancelCommand.NotifyCanExecuteChanged();
     }
 }

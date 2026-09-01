@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows.Input;
+using MemoryProfiler.App.ViewModels.Overview;
 using MemoryProfiler.App.ViewModels.Types;
 using MemoryProfiler.Contracts.Heap;
 
@@ -61,7 +62,7 @@ public sealed class ComparisonTableViewModel : ViewModelBase
 
     public string ShownSummary =>
         HasDeltas
-            ? $"{FilteredDeltaCount.ToString("N0", CultureInfo.CurrentCulture)} of {TotalDeltaCount.ToString("N0", CultureInfo.CurrentCulture)} types"
+            ? $"{MetricFormatting.Count(FilteredDeltaCount)} of {MetricFormatting.Count(TotalDeltaCount)} types"
             : string.Empty;
 
     public bool ShowGrowingOnly

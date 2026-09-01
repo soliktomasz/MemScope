@@ -1,5 +1,6 @@
 using System.Globalization;
 using Avalonia;
+using MemoryProfiler.App.ViewModels.Overview;
 
 namespace MemoryProfiler.App.ViewModels.Objects;
 
@@ -15,7 +16,8 @@ public sealed class GcRootRowViewModel
         string typeNameDisplay,
         ulong endpointAddress,
         string endpointTypeName,
-        bool canNavigate)
+        bool canNavigate,
+        string rootPathDisplay = "")
     {
         Depth = depth;
         IsRoot = isRoot;
@@ -27,6 +29,7 @@ public sealed class GcRootRowViewModel
         EndpointAddress = endpointAddress;
         EndpointTypeName = endpointTypeName;
         CanNavigate = canNavigate;
+        RootPathDisplay = rootPathDisplay;
     }
 
     public int Depth { get; }
@@ -49,11 +52,13 @@ public sealed class GcRootRowViewModel
 
     public bool CanNavigate { get; }
 
+    public string RootPathDisplay { get; }
+
     public Thickness IndentMargin =>
         new(8 + Depth * 16, 0, 0, 0);
 
     public static string AddressDisplayFor(ulong address) =>
         address == 0
             ? "root"
-            : "0x" + address.ToString("X12", CultureInfo.InvariantCulture);
+            : MetricFormatting.Address(address);
 }

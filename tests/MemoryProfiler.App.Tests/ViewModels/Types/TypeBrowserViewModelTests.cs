@@ -328,7 +328,12 @@ public sealed class TypeBrowserViewModelTests
             unitIndex++;
         }
 
-        var format = amount >= 100 || unitIndex == 0 ? "N0" : "N1";
+        var format = unitIndex switch
+        {
+            0 => "N0",
+            1 or 2 => "#,0.#",
+            _ => "#,0.##",
+        };
         return $"{amount.ToString(format, CultureInfo.CurrentCulture)} {units[unitIndex]}";
     }
 

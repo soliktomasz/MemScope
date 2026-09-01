@@ -4,6 +4,7 @@ using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.References;
 using MemoryProfiler.App.Errors;
 using MemoryProfiler.App.Models;
+using MemoryProfiler.App.ViewModels.Overview;
 using MemoryProfiler.Contracts.Heap;
 
 namespace MemoryProfiler.App.ViewModels.Objects;
@@ -13,6 +14,7 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
     private readonly IObjectReferenceService _service;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly CancellationTokenSource _disposeCancellation = new();
+    private readonly RelayCommand _cancelCommand;
     private readonly AsyncCommand _showOutgoingCommand;
     private readonly AsyncCommand _showIncomingCommand;
     private ObservableCollection<ObjectReferenceRowViewModel> _references = [];
@@ -26,6 +28,7 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
     private bool _isLoading;
     private int _loadVersion;
     private int _disposed;
+    private ObjectReferenceRowViewModel? _selectedReference;
 
     internal ObjectReferencesViewModel(
         IObjectReferenceService service,
@@ -36,6 +39,7 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
         _service = service;
         _uiDispatcher = uiDispatcher;
         _referencesView = new ReadOnlyObservableCollection<ObjectReferenceRowViewModel>(_references);
+        _cancelCommand = new RelayCommand(CancelLoad, () => IsLoading);
         _showOutgoingCommand = new AsyncCommand(
             ShowOutgoingAsync,
             () => HasSelection);
@@ -46,12 +50,18 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
 
     public ReadOnlyObservableCollection<ObjectReferenceRowViewModel> References => _referencesView;
 
+    public ObjectReferenceRowViewModel? SelectedReference
+    {
+        get => _selectedReference;
+        set => SetProperty(ref _selectedReference, value);
+    }
+
     public string ObjectTypeName => _objectTypeName;
 
     public string AddressDisplay =>
         _objectAddress == 0
             ? string.Empty
-            : "0x" + _objectAddress.ToString("X12", CultureInfo.InvariantCulture);
+            : MetricFormatting.Address(_objectAddress);
 
     public ReferenceDirection Direction => _direction;
 
@@ -70,7 +80,7 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
     public string SummaryDisplay =>
         _objectAddress == 0 || _references.Count == 0
             ? string.Empty
-            : $"{_references.Count.ToString("N0", CultureInfo.CurrentCulture)} {DirectionLabel.ToLowerInvariant()} references";
+            : $"{MetricFormatting.Count(_references.Count)} {DirectionLabel.ToLowerInvariant()} references";
 
     public bool HasSelection => _objectAddress != 0;
 
@@ -95,6 +105,8 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
     public System.Windows.Input.ICommand ShowOutgoingCommand => _showOutgoingCommand;
 
     public System.Windows.Input.ICommand ShowIncomingCommand => _showIncomingCommand;
+
+    public System.Windows.Input.ICommand CancelCommand => _cancelCommand;
 
     public async Task ShowAsync(
         HeapSnapshot snapshot,
@@ -141,6 +153,7 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
             // state, so a failed or pending load can never show stale results
             // or a summary that contradicts the inspected object.
             _references = [];
+            SelectedReference = null;
             _referencesView = new ReadOnlyObservableCollection<ObjectReferenceRowViewModel>(_references);
             OnPropertyChanged(nameof(References));
             OnPropertyChanged(nameof(ObjectTypeName));
@@ -239,6 +252,7 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
             SetError(null);
             _isLoading = false;
             _references = [];
+            SelectedReference = null;
             _referencesView = new ReadOnlyObservableCollection<ObjectReferenceRowViewModel>(_references);
             OnPropertyChanged(nameof(References));
             OnPropertyChanged(nameof(ObjectTypeName));
@@ -384,6 +398,7 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
         OnPropertyChanged(nameof(ShowError));
         OnPropertyChanged(nameof(ShowEmpty));
         OnPropertyChanged(nameof(ShowTable));
+        _cancelCommand.NotifyCanExecuteChanged();
     }
 
     private void NotifyDirectionCommandsCanExecuteChanged()

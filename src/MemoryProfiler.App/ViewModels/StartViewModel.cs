@@ -30,6 +30,7 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
     private readonly ISnapshotComparisonService? _comparisonService;
     private readonly IDumpFilePicker? _dumpFilePicker;
     private readonly ISessionRepository? _sessionRepository;
+    private readonly IClipboardService? _clipboardService;
     private readonly SemaphoreSlim _sessionHistoryGate = new(1, 1);
     private readonly CancellationTokenSource _sessionHistoryCancellation = new();
     private readonly ObservableCollection<RecentSessionRowViewModel> _recentSessions = [];
@@ -93,7 +94,8 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         IGcRootService? gcRootService = null,
         IDominatorTreeService? dominatorService = null,
         ISnapshotComparisonService? comparisonService = null,
-        ISessionRepository? sessionRepository = null)
+        ISessionRepository? sessionRepository = null,
+        IClipboardService? clipboardService = null)
     {
         ArgumentNullException.ThrowIfNull(processPicker);
         ArgumentNullException.ThrowIfNull(sessionFactory);
@@ -111,6 +113,7 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         _dominatorService = dominatorService;
         _comparisonService = comparisonService;
         _sessionRepository = sessionRepository;
+        _clipboardService = clipboardService;
         RecentSessions = new ReadOnlyObservableCollection<RecentSessionRowViewModel>(
             _recentSessions);
         _attachToProcessCommand = new AsyncCommand(() => ShowProcessPickerAsync());
@@ -475,7 +478,8 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
             _gcRootService,
             _uiDispatcher,
             CloseSnapshotAsync,
-            _dominatorService);
+            _dominatorService,
+            _clipboardService);
         Snapshot = snapshot;
         await snapshot.LoadAsync(path, cancellationToken);
         if (snapshot.SnapshotInfo is { } info)

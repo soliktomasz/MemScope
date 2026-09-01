@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows.Input;
+using MemoryProfiler.App.ViewModels.Overview;
 using MemoryProfiler.Contracts.Heap;
 
 namespace MemoryProfiler.App.ViewModels.Types;
@@ -82,7 +83,7 @@ public sealed class TypeBrowserViewModel : ViewModelBase
 
     public string ShownSummary =>
         HasTypes
-            ? $"{FilteredTypeCount.ToString("N0", CultureInfo.CurrentCulture)} of {TotalTypeCount.ToString("N0", CultureInfo.CurrentCulture)} types"
+            ? $"{MetricFormatting.Count(FilteredTypeCount)} of {MetricFormatting.Count(TotalTypeCount)} types"
             : string.Empty;
 
     public string SearchText

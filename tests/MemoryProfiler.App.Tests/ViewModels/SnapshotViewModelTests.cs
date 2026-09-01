@@ -8,6 +8,7 @@ using MemoryProfiler.App.Errors;
 using MemoryProfiler.App.Models;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels.Objects;
+using MemoryProfiler.App.ViewModels.Types;
 using MemoryProfiler.App.ViewModels;
 using MemoryProfiler.Contracts.Heap;
 using Xunit;
@@ -30,6 +31,35 @@ public sealed class SnapshotViewModelTests
 
     private static HeapTypeInfo Type(string name, string assembly, long count, ulong size) =>
         new(0x1000, name, assembly, count, size, null);
+
+    [Fact]
+    public async Task CopyCommandsWriteTheSelectedInvestigationValue()
+    {
+        var clipboard = new RecordingClipboardService();
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(Snapshot()),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            ImmediateUiDispatcher.Instance,
+            clipboardService: clipboard);
+        var type = new TypeRowViewModel(Type("Example.Widget", "Example", 1, 24));
+        var instance = new HeapObjectRowViewModel(
+            new HeapObjectInfo(0x1234, 0x1000, "Example.Widget", 24, "Gen0"));
+        var root = new GcRootRowViewModel(
+            0, true, false, "GC Root", "Static field", "root", "Example.Root",
+            0, string.Empty, false, "complete root path");
+
+        await ((AsyncCommand<TypeRowViewModel>)viewModel.CopyTypeNameCommand)
+            .ExecuteAsync(type);
+        Assert.Equal("Example.Widget", clipboard.Text);
+        await ((AsyncCommand<object>)viewModel.CopyObjectAddressCommand)
+            .ExecuteAsync(instance);
+        Assert.Equal("0x000000001234", clipboard.Text);
+        await ((AsyncCommand<GcRootRowViewModel>)viewModel.CopyGcRootPathCommand)
+            .ExecuteAsync(root);
+        Assert.Equal("complete root path", clipboard.Text);
+    }
 
     [Fact]
     public async Task LoadPublishesSnapshotAndPopulatesTheTypeBrowser()
@@ -95,6 +125,106 @@ public sealed class SnapshotViewModelTests
 
         Assert.False(viewModel.IsLoading);
         Assert.True(viewModel.IsReady);
+    }
+
+    [Fact]
+    public async Task SupersededLoadCannotClearTheActiveLoadingState()
+    {
+        var firstStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstCancelled = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondCompletion = new TaskCompletionSource<HeapSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var loadCount = 0;
+        var loader = new StubSnapshotLoader(async cancellationToken =>
+        {
+            if (Interlocked.Increment(ref loadCount) == 1)
+            {
+                firstStarted.SetResult();
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    firstCancelled.SetResult();
+                    await releaseFirst.Task;
+                    throw;
+                }
+            }
+
+            secondStarted.SetResult();
+            return await secondCompletion.Task.WaitAsync(cancellationToken);
+        });
+        await using var viewModel = new SnapshotViewModel(
+            loader,
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            ImmediateUiDispatcher.Instance);
+
+        var firstLoad = viewModel.LoadAsync("first.dmp");
+        await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var secondLoad = viewModel.LoadAsync("second.dmp");
+        await secondStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await firstCancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        releaseFirst.SetResult();
+        await firstLoad;
+
+        Assert.True(viewModel.IsLoading);
+        Assert.True(viewModel.CancelLoadCommand.CanExecute(null));
+
+        secondCompletion.SetResult(Snapshot());
+        await secondLoad;
+
+        Assert.False(viewModel.IsLoading);
+    }
+
+    [Fact]
+    public async Task CancelLoadCommandStopsLoadingWithoutReportingAnError()
+    {
+        var started = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancelled = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var loader = new StubSnapshotLoader(async cancellationToken =>
+        {
+            started.SetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                cancelled.SetResult();
+                throw;
+            }
+
+            return Snapshot();
+        });
+        await using var viewModel = new SnapshotViewModel(
+            loader,
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            ImmediateUiDispatcher.Instance);
+
+        var load = viewModel.LoadAsync("sample.dmp");
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(viewModel.CancelLoadCommand.CanExecute(null));
+
+        viewModel.CancelLoadCommand.Execute(null);
+        await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await load;
+
+        Assert.False(viewModel.IsLoading);
+        Assert.False(viewModel.HasError);
     }
 
     [Fact]
@@ -664,6 +794,7 @@ public sealed class SnapshotViewModelTests
         Assert.True(viewModel.ShowRetainedSizeProgress);
         Assert.Equal(0.42, viewModel.RetainedSizeProgress, precision: 10);
         Assert.Contains("42%", viewModel.RetainedSizeStatusText);
+        Assert.True(viewModel.CancelRetainedSizeCommand.CanExecute(null));
 
         // Await the fire-and-forget continuation's publish deterministically:
         // subscribe to the state change before completing the gate, then wait
@@ -798,6 +929,18 @@ public sealed class SnapshotViewModelTests
 
         var format = amount >= 100 || unitIndex == 0 ? "N0" : "N1";
         return $"{amount.ToString(format, CultureInfo.CurrentCulture)} {units[unitIndex]}";
+    }
+
+    private sealed class RecordingClipboardService : IClipboardService
+    {
+        public string? Text { get; private set; }
+
+        public Task SetTextAsync(string text, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Text = text;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class StubSnapshotLoader : IHeapSnapshotLoader

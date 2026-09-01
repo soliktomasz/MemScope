@@ -35,5 +35,17 @@
   </Application.Resources>
   <Application.Styles>
     <FluentTheme />
+    <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
+    <Style Selector="DataGrid">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="ColumnHeaderHeight" Value="34" />
+      <Setter Property="RowHeight" Value="32" />
+      <Setter Property="SelectionMode" Value="Single" />
+      <Setter Property="HeadersVisibility" Value="Column" />
+      <Setter Property="HorizontalScrollBarVisibility" Value="Auto" />
+      <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+    </Style>
   </Application.Styles>
 </Application>

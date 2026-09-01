@@ -13,6 +13,7 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
     private readonly IHeapObjectRepository _repository;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly CancellationTokenSource _disposeCancellation = new();
+    private readonly RelayCommand _cancelCommand;
     private ObservableCollection<HeapObjectRowViewModel> _instances = [];
     private ReadOnlyObservableCollection<HeapObjectRowViewModel> _instancesView;
     private CancellationTokenSource? _loadCancellation;
@@ -22,6 +23,7 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
     private bool _isLoading;
     private int _loadVersion;
     private int _disposed;
+    private HeapObjectRowViewModel? _selectedInstance;
 
     internal ObjectInstancesViewModel(
         IHeapObjectRepository repository,
@@ -32,16 +34,23 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
         _repository = repository;
         _uiDispatcher = uiDispatcher;
         _instancesView = new ReadOnlyObservableCollection<HeapObjectRowViewModel>(_instances);
+        _cancelCommand = new RelayCommand(CancelLoad, () => IsLoading);
     }
 
     public ReadOnlyObservableCollection<HeapObjectRowViewModel> Instances => _instancesView;
+
+    public HeapObjectRowViewModel? SelectedInstance
+    {
+        get => _selectedInstance;
+        set => SetProperty(ref _selectedInstance, value);
+    }
 
     public string TypeName => _type?.Name ?? string.Empty;
 
     public string SummaryDisplay =>
         _type is null || _instances.Count == 0
             ? string.Empty
-            : $"{_instances.Count.ToString("N0", CultureInfo.CurrentCulture)} instances · {MetricFormatting.Bytes(_totalSize)}";
+            : $"{MetricFormatting.Count(_instances.Count)} instances · {MetricFormatting.Bytes(_totalSize)}";
 
     public bool HasSelection => _type is not null;
 
@@ -62,6 +71,8 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
     public bool ShowEmpty => HasSelection && !IsLoading && !HasError && _instances.Count == 0;
 
     public bool ShowTable => HasSelection && !IsLoading && !HasError && _instances.Count > 0;
+
+    public System.Windows.Input.ICommand CancelCommand => _cancelCommand;
 
     public async Task ShowAsync(
         HeapSnapshot snapshot,
@@ -98,6 +109,7 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
             // state, so a failed or pending load can never show stale results
             // or a summary that contradicts the selected type name.
             _instances = [];
+            SelectedInstance = null;
             _instancesView = new ReadOnlyObservableCollection<HeapObjectRowViewModel>(_instances);
             _totalSize = 0;
             OnPropertyChanged(nameof(Instances));
@@ -192,6 +204,7 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
             SetError(null);
             _isLoading = false;
             _instances = [];
+            SelectedInstance = null;
             _instancesView = new ReadOnlyObservableCollection<HeapObjectRowViewModel>(_instances);
             _totalSize = 0;
             OnPropertyChanged(nameof(Instances));
@@ -280,5 +293,6 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
         OnPropertyChanged(nameof(ShowError));
         OnPropertyChanged(nameof(ShowEmpty));
         OnPropertyChanged(nameof(ShowTable));
+        _cancelCommand.NotifyCanExecuteChanged();
     }
 }

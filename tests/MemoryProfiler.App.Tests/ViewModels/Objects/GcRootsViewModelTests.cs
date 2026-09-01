@@ -84,6 +84,14 @@ public sealed class GcRootsViewModelTests
         Assert.Equal("MyApp.CustomerDto", viewModel.ObjectTypeName);
         Assert.Equal("0x000000004000", viewModel.AddressDisplay);
         Assert.Equal("1 path to root", viewModel.SummaryDisplay);
+        Assert.Equal(
+            string.Join(
+                Environment.NewLine,
+                "GC Root: MyApp.Program._cache",
+                "0x000000001000 MyApp.Cache",
+                "0x000000002000 System.Collections.Generic.Dictionary",
+                "0x000000004000 MyApp.CustomerDto"),
+            viewModel.Rows[0].RootPathDisplay);
 
         Assert.Collection(
             viewModel.Rows,
@@ -221,6 +229,44 @@ public sealed class GcRootsViewModelTests
         Assert.False(viewModel.IsLoading);
         Assert.True(viewModel.ShowTable);
         Assert.Equal("1 path to root", viewModel.SummaryDisplay);
+    }
+
+    [Fact]
+    public async Task CancelCommandStopsAnActiveSearchWithoutAnError()
+    {
+        var started = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancelled = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var service = new StubGcRootService(async cancellationToken =>
+        {
+            started.SetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                cancelled.SetResult();
+                throw;
+            }
+
+            return [];
+        });
+        var viewModel = new GcRootsViewModel(service, ImmediateUiDispatcher.Instance);
+        await using var _ = viewModel;
+
+        var show = viewModel.ShowAsync(Snapshot(), "MyApp.Widget", 0x1000);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(viewModel.CancelCommand.CanExecute(null));
+        viewModel.CancelCommand.Execute(null);
+        await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await show;
+
+        Assert.False(viewModel.IsLoading);
+        Assert.False(viewModel.HasError);
+        Assert.False(viewModel.CancelCommand.CanExecute(null));
     }
 
     [Fact]
