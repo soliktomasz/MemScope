@@ -1,5 +1,6 @@
 using System.Globalization;
 using Avalonia;
+using MemoryProfiler.App.ViewModels.Overview;
 
 namespace MemoryProfiler.App.ViewModels.Objects;
 
@@ -55,5 +56,5 @@ public sealed class GcRootRowViewModel
     public static string AddressDisplayFor(ulong address) =>
         address == 0
             ? "root"
-            : "0x" + address.ToString("X12", CultureInfo.InvariantCulture);
+            : MetricFormatting.Address(address);
 }

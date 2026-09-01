@@ -3,6 +3,7 @@ using System.Globalization;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Roots;
 using MemoryProfiler.App.Errors;
+using MemoryProfiler.App.ViewModels.Overview;
 using MemoryProfiler.Contracts.Heap;
 
 namespace MemoryProfiler.App.ViewModels.Objects;
@@ -42,7 +43,7 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
     public string AddressDisplay =>
         _objectAddress == 0
             ? string.Empty
-            : "0x" + _objectAddress.ToString("X12", CultureInfo.InvariantCulture);
+            : MetricFormatting.Address(_objectAddress);
 
     public string SummaryDisplay
     {
@@ -57,7 +58,7 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
             {
                 0 => string.Empty,
                 1 => "1 path to root",
-                var count => $"{count.ToString("N0", CultureInfo.CurrentCulture)} paths to root",
+                var count => $"{MetricFormatting.Count(count)} paths to root",
             };
         }
     }

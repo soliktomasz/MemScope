@@ -194,7 +194,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
     public string ObjectCountDisplay =>
         _snapshot is null
             ? string.Empty
-            : _snapshot.Info.ObjectCount.ToString("N0", CultureInfo.CurrentCulture);
+            : MetricFormatting.Count(_snapshot.Info.ObjectCount);
 
     public string HeapSizeDisplay =>
         _snapshot is null ? string.Empty : MetricFormatting.Bytes(_snapshot.Info.HeapSize);

@@ -1,5 +1,6 @@
 using System.Globalization;
 using MemoryProfiler.App.Models;
+using MemoryProfiler.App.ViewModels.Overview;
 using MemoryProfiler.Contracts.Heap;
 
 namespace MemoryProfiler.App.ViewModels.Objects;
@@ -39,7 +40,7 @@ public sealed class ObjectReferenceRowViewModel
         };
         AddressDisplay = isRoot
             ? "root"
-            : "0x" + EndpointAddress.ToString("X12", CultureInfo.InvariantCulture);
+            : MetricFormatting.Address(EndpointAddress);
         TypeNameDisplay = isRoot ? "N/A" : EndpointTypeName ?? "N/A";
     }
 

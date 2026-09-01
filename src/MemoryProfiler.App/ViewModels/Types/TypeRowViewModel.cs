@@ -23,7 +23,7 @@ public sealed class TypeRowViewModel
 
     public string AssemblyName => Type.AssemblyName ?? "Unknown assembly";
 
-    public string CountDisplay => Type.ObjectCount.ToString("N0", CultureInfo.CurrentCulture);
+    public string CountDisplay => MetricFormatting.Count(Type.ObjectCount);
 
     public string ShallowSizeDisplay => MetricFormatting.Bytes(Type.ShallowSize);
 

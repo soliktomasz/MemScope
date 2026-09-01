@@ -41,7 +41,7 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
     public string SummaryDisplay =>
         _type is null || _instances.Count == 0
             ? string.Empty
-            : $"{_instances.Count.ToString("N0", CultureInfo.CurrentCulture)} instances · {MetricFormatting.Bytes(_totalSize)}";
+            : $"{MetricFormatting.Count(_instances.Count)} instances · {MetricFormatting.Bytes(_totalSize)}";
 
     public bool HasSelection => _type is not null;
 

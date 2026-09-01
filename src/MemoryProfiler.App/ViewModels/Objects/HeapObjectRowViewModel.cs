@@ -1,4 +1,3 @@
-using System.Globalization;
 using MemoryProfiler.App.ViewModels.Overview;
 using MemoryProfiler.Contracts.Heap;
 
@@ -16,8 +15,7 @@ public sealed class HeapObjectRowViewModel
 
     public ulong Address => Instance.Address;
 
-    public string AddressDisplay =>
-        "0x" + Instance.Address.ToString("X12", CultureInfo.InvariantCulture);
+    public string AddressDisplay => MetricFormatting.Address(Instance.Address);
 
     public string SizeDisplay => MetricFormatting.Bytes(Instance.Size);
 

@@ -4,6 +4,7 @@ using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.References;
 using MemoryProfiler.App.Errors;
 using MemoryProfiler.App.Models;
+using MemoryProfiler.App.ViewModels.Overview;
 using MemoryProfiler.Contracts.Heap;
 
 namespace MemoryProfiler.App.ViewModels.Objects;
@@ -51,7 +52,7 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
     public string AddressDisplay =>
         _objectAddress == 0
             ? string.Empty
-            : "0x" + _objectAddress.ToString("X12", CultureInfo.InvariantCulture);
+            : MetricFormatting.Address(_objectAddress);
 
     public ReferenceDirection Direction => _direction;
 
@@ -70,7 +71,7 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
     public string SummaryDisplay =>
         _objectAddress == 0 || _references.Count == 0
             ? string.Empty
-            : $"{_references.Count.ToString("N0", CultureInfo.CurrentCulture)} {DirectionLabel.ToLowerInvariant()} references";
+            : $"{MetricFormatting.Count(_references.Count)} {DirectionLabel.ToLowerInvariant()} references";
 
     public bool HasSelection => _objectAddress != 0;
 

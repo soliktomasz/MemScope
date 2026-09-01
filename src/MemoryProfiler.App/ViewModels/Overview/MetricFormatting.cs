@@ -15,9 +15,20 @@ internal static class MetricFormatting
             unitIndex++;
         }
 
-        var format = amount >= 100 || unitIndex == 0 ? "N0" : "N1";
+        var format = unitIndex switch
+        {
+            0 => "N0",
+            1 or 2 => amount >= 100 ? "N0" : "N1",
+            _ => amount >= 100 ? "N0" : amount >= 10 ? "N1" : "N2",
+        };
         return $"{amount.ToString(format, CultureInfo.CurrentCulture)} {units[unitIndex]}";
     }
+
+    public static string Count(long value) =>
+        value.ToString("N0", CultureInfo.CurrentCulture);
+
+    public static string Address(ulong value) =>
+        "0x" + value.ToString("X12", CultureInfo.InvariantCulture);
 
     public static string BytesPerSecond(double value)
     {
