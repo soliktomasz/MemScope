@@ -506,6 +506,12 @@ internal sealed class ClrMdHeapDumpSource : IHeapDumpSource
             _ => "GC root",
         };
 
+    public HeapObjectValueResult ReadObjectValues(
+        ulong objectAddress,
+        ObjectValueReadOptions options,
+        CancellationToken cancellationToken) =>
+        ClrMdHeapValueReader.Read(_runtime, objectAddress, options, cancellationToken);
+
     public void Dispose() => _dataTarget.Dispose();
 
     private static string? GetProcessName(string? imagePath)
