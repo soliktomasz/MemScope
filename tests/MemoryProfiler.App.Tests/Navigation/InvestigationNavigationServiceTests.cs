@@ -6,6 +6,7 @@ using Xunit;
 
 namespace MemoryProfiler.App.Tests.Navigation;
 
+[Collection("Profiler memory")]
 public sealed class InvestigationNavigationServiceTests
 {
     [Fact]

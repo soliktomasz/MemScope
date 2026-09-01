@@ -27,10 +27,10 @@ public sealed class HeapDumpFixture : IAsyncDisposable
         var path = System.IO.Path.Combine(
             System.IO.Path.GetTempPath(),
             $"memscope-workload-{Guid.NewGuid():N}.dmp");
-        var ambientTempDir = Environment.GetEnvironmentVariable("TMPDIR");
+        await using var environment = await ProcessEnvironmentScope
+            .EnterTempDirectoryAsync(socketRoot, cancellationToken);
         try
         {
-            Environment.SetEnvironmentVariable("TMPDIR", socketRoot);
             await new DiagnosticsClient(processId).WriteDumpAsync(
                 DumpType.WithHeap,
                 path,
@@ -42,10 +42,6 @@ public sealed class HeapDumpFixture : IAsyncDisposable
         {
             DeleteBestEffort(path);
             throw;
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("TMPDIR", ambientTempDir);
         }
     }
 

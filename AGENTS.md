@@ -44,4 +44,4 @@ Tests mirror src under `tests/`: `MemoryProfiler.App.Tests` (view-model tests), 
 
 ## Notes
 
-- Full suite: 452 tests as of branch `18-task-19-performance-hardening` — re-verify counts after changes.
+- Full suite: 453 tests as of branch `18-task-19-performance-hardening` — re-verify counts after changes.

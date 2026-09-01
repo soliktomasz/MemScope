@@ -34,7 +34,7 @@ public sealed class WorkloadTargetFixture : IAsyncDisposable
                 assemblyPath);
         }
 
-        var socketRoot = ResolveShortSocketRoot();
+        var socketRoot = await ResolveShortSocketRootAsync(cancellationToken);
         var startInfo = new ProcessStartInfo("dotnet")
         {
             RedirectStandardOutput = true,
@@ -79,18 +79,12 @@ public sealed class WorkloadTargetFixture : IAsyncDisposable
 
     public ValueTask DisposeAsync() => new(StopAndDisposeAsync(_process));
 
-    private static string ResolveShortSocketRoot()
+    private static async Task<string> ResolveShortSocketRootAsync(
+        CancellationToken cancellationToken)
     {
-        var ambient = Environment.GetEnvironmentVariable("TMPDIR");
-        try
-        {
-            Environment.SetEnvironmentVariable("TMPDIR", null);
-            return Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar);
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("TMPDIR", ambient);
-        }
+        await using var environment = await ProcessEnvironmentScope
+            .EnterTempDirectoryAsync(tempDirectory: null, cancellationToken);
+        return Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar);
     }
 
     private static async Task StopAndDisposeAsync(Process process)

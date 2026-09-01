@@ -42,26 +42,19 @@ public sealed class WorkloadDiagnosticsAcceptanceTests
         await using var target = await WorkloadTargetFixture.StartAsync(
             assemblyName,
             cancellationToken: timeout.Token);
-        var ambientTempDir = Environment.GetEnvironmentVariable("TMPDIR");
-        try
+        await using var environment = await ProcessEnvironmentScope
+            .EnterTempDirectoryAsync(target.SocketRoot, timeout.Token);
+        await using var session = await new LiveDiagnosticsSessionFactory()
+            .ConnectAsync(target.ProcessId, timeout.Token);
+        await foreach (var metrics in session.ObserveMemoryAsync(timeout.Token))
         {
-            Environment.SetEnvironmentVariable("TMPDIR", target.SocketRoot);
-            await using var session = await new LiveDiagnosticsSessionFactory()
-                .ConnectAsync(target.ProcessId, timeout.Token);
-            await foreach (var metrics in session.ObserveMemoryAsync(timeout.Token))
+            if (predicate(metrics))
             {
-                if (predicate(metrics))
-                {
-                    return metrics;
-                }
+                return metrics;
             }
+        }
 
-            throw new InvalidOperationException(
-                $"Target '{assemblyName}' completed without matching metrics.");
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("TMPDIR", ambientTempDir);
-        }
+        throw new InvalidOperationException(
+            $"Target '{assemblyName}' completed without matching metrics.");
     }
 }
