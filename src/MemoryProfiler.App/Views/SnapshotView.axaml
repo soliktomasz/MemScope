@@ -8,111 +8,19 @@
              x:DataType="vm:SnapshotViewModel"
              x:CompileBindings="True">
   <UserControl.Styles>
-    <Style Selector="TextBlock.dashboard-title">
-      <Setter Property="FontSize" Value="24" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
-    </Style>
-    <Style Selector="TextBlock.section-label">
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
-    </Style>
-    <Style Selector="TextBlock.metric-value">
-      <Setter Property="FontFamily" Value="Cascadia Mono, Menlo, Consolas" />
-      <Setter Property="FontSize" Value="16" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
-    </Style>
-    <Style Selector="TextBlock.secondary">
-      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
-    </Style>
-    <Style Selector="TextBlock.mono-data">
-      <Setter Property="FontFamily" Value="Cascadia Mono, Menlo, Consolas" />
-      <Setter Property="FontSize" Value="13" />
-      <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
-    </Style>
-    <Style Selector="TextBlock.table-header">
-      <Setter Property="Padding" Value="8,4" />
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
-    </Style>
-    <Style Selector="Button.dashboard-action">
-      <Setter Property="MinHeight" Value="36" />
-      <Setter Property="Padding" Value="15,7" />
-      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
     <Style Selector="Button.navigation-button">
-      <Setter Property="MinWidth" Value="36" />
-      <Setter Property="MinHeight" Value="36" />
-      <Setter Property="Padding" Value="8,5" />
-      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
+      <Setter Property="MinWidth" Value="34" />
+      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="Padding" Value="7,4" />
+      <Setter Property="CornerRadius" Value="{DynamicResource AppControlCornerRadius}" />
       <Setter Property="FontSize" Value="18" />
       <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
-    <Style Selector="Button.table-header">
-      <Setter Property="MinHeight" Value="32" />
-      <Setter Property="Padding" Value="8,4" />
-      <Setter Property="HorizontalContentAlignment" Value="Left" />
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
-    </Style>
-    <Style Selector="Border.skeleton">
-      <Setter Property="Height" Value="12" />
-      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
-      <Setter Property="Background" Value="{DynamicResource AppSurfaceSubtleBrush}" />
-    </Style>
-    <Style Selector="ListBox.type-list">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-    </Style>
-    <Style Selector="ListBox.type-list ListBoxItem">
-      <Setter Property="MinHeight" Value="34" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
-    </Style>
-    <Style Selector="ListBox.instance-list">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-    </Style>
-    <Style Selector="ListBox.instance-list ListBoxItem">
-      <Setter Property="MinHeight" Value="30" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
-    </Style>
-    <Style Selector="ListBox.reference-list">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-    </Style>
-    <Style Selector="ListBox.reference-list ListBoxItem">
-      <Setter Property="MinHeight" Value="30" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
-    </Style>
-    <Style Selector="ListBox.path-list">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-    </Style>
-    <Style Selector="ListBox.path-list ListBoxItem">
-      <Setter Property="MinHeight" Value="30" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
     </Style>
     <Style Selector="Button.direction-button">
       <Setter Property="MinHeight" Value="26" />
       <Setter Property="Padding" Value="12,3" />
       <Setter Property="FontSize" Value="12" />
-      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
+      <Setter Property="CornerRadius" Value="{DynamicResource AppControlCornerRadius}" />
     </Style>
     <Style Selector="Button.direction-button.active">
       <Setter Property="Background" Value="{DynamicResource AppAccentBrush}" />
@@ -120,7 +28,7 @@
     </Style>
   </UserControl.Styles>
 
-  <Grid Margin="32,26,32,28"
+  <Grid Margin="{DynamicResource AppPageMargin}"
         RowDefinitions="Auto,Auto,Auto,*"
         RowSpacing="16">
     <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="20">
@@ -140,37 +48,39 @@
                   Content="→" />
         </StackPanel>
         <StackPanel Spacing="4">
-          <TextBlock Classes="dashboard-title" Text="Snapshot" />
+          <TextBlock Classes="view-title" Text="Snapshot" />
           <TextBlock Classes="secondary"
                      FontSize="13"
                      Text="{Binding ProcessDescription}" />
         </StackPanel>
       </StackPanel>
       <Button Grid.Column="1"
-              Classes="dashboard-action"
+              Classes="app-button subtle"
               VerticalAlignment="Top"
               Command="{Binding CloseCommand}"
               Content="Close" />
     </Grid>
 
-    <Grid Grid.Row="1"
-          IsVisible="{Binding IsReady}"
-          ColumnDefinitions="Auto,Auto,Auto,Auto,*"
-          ColumnSpacing="34">
+    <Border Grid.Row="1"
+            IsVisible="{Binding IsReady}"
+            Classes="subtle-surface"
+            Padding="18,14">
+      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*"
+            ColumnSpacing="34">
       <StackPanel Spacing="5">
-        <TextBlock Classes="section-label" Text="RUNTIME" />
+        <TextBlock Classes="section-label" Text="Runtime" />
         <TextBlock Classes="metric-value" Text="{Binding RuntimeDisplay}" />
       </StackPanel>
       <StackPanel Grid.Column="1" Spacing="5">
-        <TextBlock Classes="section-label" Text="CAPTURED AT" />
+        <TextBlock Classes="section-label" Text="Captured at" />
         <TextBlock Classes="metric-value" Text="{Binding CapturedAtDisplay}" />
       </StackPanel>
       <StackPanel Grid.Column="2" Spacing="5">
-        <TextBlock Classes="section-label" Text="OBJECTS" />
+        <TextBlock Classes="section-label" Text="Objects" />
         <TextBlock Classes="metric-value" Text="{Binding ObjectCountDisplay}" />
       </StackPanel>
       <StackPanel Grid.Column="3" Spacing="5">
-        <TextBlock Classes="section-label" Text="HEAP SIZE" />
+        <TextBlock Classes="section-label" Text="Heap size" />
         <TextBlock Classes="metric-value" Text="{Binding HeapSizeDisplay}" />
       </StackPanel>
       <StackPanel Grid.Column="4"
@@ -183,28 +93,31 @@
                    ToolTip.Tip="{Binding SourcePath}"
                    Text="{Binding SourcePath}" />
       </StackPanel>
-    </Grid>
+      </Grid>
+    </Border>
 
-    <Grid Grid.Row="2"
-          IsVisible="{Binding IsReady}"
-          ColumnDefinitions="*,Auto,Auto,Auto"
-          ColumnSpacing="8">
+    <Border Grid.Row="2"
+            IsVisible="{Binding IsReady}"
+            Classes="subtle-surface"
+            Padding="14,10">
+      <Grid ColumnDefinitions="*,Auto,Auto,Auto"
+            ColumnSpacing="8">
       <StackPanel Spacing="5">
-        <TextBlock Classes="section-label" Text="SEARCH" />
+        <TextBlock Classes="section-label" Text="Search" />
         <TextBox MaxWidth="380"
                  AutomationProperties.Name="Search types"
                  PlaceholderText="Search type or namespace"
                  Text="{Binding Types.SearchText}" />
       </StackPanel>
       <StackPanel Grid.Column="1" Spacing="5">
-        <TextBlock Classes="section-label" Text="ASSEMBLY" />
+        <TextBlock Classes="section-label" Text="Assembly" />
         <ComboBox Width="170"
                   AutomationProperties.Name="Assembly filter"
                   ItemsSource="{Binding Types.AssemblyFilters}"
                   SelectedItem="{Binding Types.SelectedAssemblyFilter, Mode=TwoWay}" />
       </StackPanel>
       <StackPanel Grid.Column="2" Spacing="5">
-        <TextBlock Classes="section-label" Text="MIN SIZE" />
+        <TextBlock Classes="section-label" Text="Minimum size" />
         <TextBox Width="110"
                  AutomationProperties.Name="Minimum size filter"
                  PlaceholderText="e.g. 100 KB"
@@ -218,12 +131,47 @@
                    FontSize="12"
                    Text="{Binding Types.ShownSummary}" />
       </StackPanel>
-    </Grid>
+      </Grid>
+    </Border>
 
     <Grid Grid.Row="3"
           RowDefinitions="2*,6,*">
       <Grid Grid.Row="0"
             RowDefinitions="Auto,*">
+        <StackPanel IsVisible="{Binding ShowRetainedSizeProgress}"
+                    Margin="10,6,10,0"
+                    VerticalAlignment="Top"
+                    Spacing="6">
+          <ProgressBar Height="2"
+                       Minimum="0"
+                       Maximum="1"
+                       IsVisible="{Binding IsComputingRetainedSizes}"
+                       Value="{Binding RetainedSizeProgress}"
+                       AutomationProperties.Name="Computing retained sizes"
+                       AutomationProperties.LiveSetting="Polite" />
+          <TextBlock IsVisible="{Binding IsComputingRetainedSizes}"
+                     Classes="secondary"
+                     FontSize="12"
+                     Text="{Binding RetainedSizeStatusText}" />
+          <Button IsVisible="{Binding IsComputingRetainedSizes}"
+                  Classes="app-button"
+                  HorizontalAlignment="Left"
+                  AutomationProperties.Name="Cancel retained size analysis"
+                  Command="{Binding CancelRetainedSizeCommand}"
+                  Content="Cancel" />
+          <Border IsVisible="{Binding HasRetainedSizeError}"
+                  Padding="12,9"
+                  CornerRadius="{DynamicResource AppSurfaceCornerRadius}"
+                  AutomationProperties.Name="{Binding RetainedSizeStatusText}"
+                  AutomationProperties.LiveSetting="Assertive"
+                  Background="{DynamicResource AppErrorSurfaceBrush}">
+            <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
+                       FontSize="13"
+                       TextWrapping="Wrap"
+                       Text="{Binding RetainedSizeStatusText}" />
+          </Border>
+        </StackPanel>
+
         <Grid Grid.Row="1">
           <StackPanel IsVisible="{Binding ShowLoading}"
                       Margin="10,22"
@@ -235,7 +183,7 @@
             <TextBlock Classes="secondary"
                        FontSize="13"
                        Text="Analyzing the managed heap..." />
-            <Button Classes="dashboard-action"
+            <Button Classes="app-button"
                     HorizontalAlignment="Left"
                     AutomationProperties.Name="Cancel snapshot analysis"
                     Command="{Binding CancelLoadCommand}"
@@ -267,11 +215,8 @@
           </Grid>
 
           <Border IsVisible="{Binding ShowEmpty}"
-                  Margin="0,18"
-                  BorderBrush="{DynamicResource AppBorderBrush}"
-                  BorderThickness="1"
-                  CornerRadius="{DynamicResource AppCornerRadius}"
-                  Padding="24">
+                  Classes="empty-state"
+                  Margin="0,18">
             <StackPanel HorizontalAlignment="Center"
                         VerticalAlignment="Center"
                         Spacing="6">
@@ -286,11 +231,8 @@
           </Border>
 
           <Border IsVisible="{Binding ShowNoFilteredTypes}"
-                  Margin="0,18"
-                  BorderBrush="{DynamicResource AppBorderBrush}"
-                  BorderThickness="1"
-                  CornerRadius="{DynamicResource AppCornerRadius}"
-                  Padding="24">
+                  Classes="empty-state"
+                  Margin="0,18">
             <StackPanel HorizontalAlignment="Center"
                         VerticalAlignment="Center"
                         Spacing="6">
@@ -329,39 +271,6 @@
             </DataGrid.Columns>
           </DataGrid>
 
-          <StackPanel IsVisible="{Binding ShowRetainedSizeProgress}"
-                      Margin="10,6,10,0"
-                      VerticalAlignment="Top"
-                      Spacing="6">
-            <ProgressBar Height="2"
-                         Minimum="0"
-                         Maximum="1"
-                         IsVisible="{Binding IsComputingRetainedSizes}"
-                         Value="{Binding RetainedSizeProgress}"
-                         AutomationProperties.Name="Computing retained sizes"
-                         AutomationProperties.LiveSetting="Polite" />
-            <TextBlock IsVisible="{Binding IsComputingRetainedSizes}"
-                       Classes="secondary"
-                       FontSize="12"
-                       Text="{Binding RetainedSizeStatusText}" />
-            <Button IsVisible="{Binding IsComputingRetainedSizes}"
-                    Classes="dashboard-action"
-                    HorizontalAlignment="Left"
-                    AutomationProperties.Name="Cancel retained size analysis"
-                    Command="{Binding CancelRetainedSizeCommand}"
-                    Content="Cancel" />
-            <Border IsVisible="{Binding HasRetainedSizeError}"
-                    Padding="12,9"
-                    CornerRadius="{DynamicResource AppCornerRadius}"
-                    AutomationProperties.Name="{Binding RetainedSizeStatusText}"
-                    AutomationProperties.LiveSetting="Assertive"
-                    Background="{DynamicResource AppErrorSurfaceBrush}">
-              <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
-                         FontSize="13"
-                         TextWrapping="Wrap"
-                         Text="{Binding RetainedSizeStatusText}" />
-            </Border>
-          </StackPanel>
         </Grid>
       </Grid>
 
@@ -369,24 +278,22 @@
                     Height="6"
                     HorizontalAlignment="Stretch"
                     VerticalAlignment="Stretch"
-                    Background="{DynamicResource AppBorderBrush}" />
+                    Background="{DynamicResource AppSurfaceSubtleBrush}" />
 
       <Grid Grid.Row="2"
             ColumnDefinitions="*,6,*,6,*">
         <Border Grid.Column="0"
+                Classes="surface"
                 MinHeight="150"
                 MinWidth="300"
-                BorderBrush="{DynamicResource AppBorderBrush}"
-                BorderThickness="1"
-                CornerRadius="{DynamicResource AppCornerRadius}"
-                Padding="14,10">
+                Padding="14,12">
         <Grid RowDefinitions="Auto,Auto,*"
               RowSpacing="8">
           <Grid Grid.Row="0"
                 ColumnDefinitions="*,Auto"
                 ColumnSpacing="16">
             <StackPanel Spacing="2">
-              <TextBlock Classes="section-label" Text="INSTANCES" />
+              <TextBlock Classes="section-label" Text="Instances" />
               <TextBlock MaxWidth="520"
                          FontWeight="SemiBold"
                          Foreground="{DynamicResource AppTextPrimaryBrush}"
@@ -425,7 +332,7 @@
             <StackPanel IsVisible="{Binding ObjectInstances.ShowLoading}"
                         Margin="0,8"
                         Spacing="10">
-              <Button Classes="dashboard-action"
+              <Button Classes="app-button"
                       HorizontalAlignment="Left"
                       AutomationProperties.Name="Cancel loading object instances"
                       Command="{Binding ObjectInstances.CancelCommand}"
@@ -505,15 +412,13 @@
                     Width="6"
                     HorizontalAlignment="Stretch"
                     VerticalAlignment="Stretch"
-                    Background="{DynamicResource AppBorderBrush}" />
+                    Background="{DynamicResource AppSurfaceSubtleBrush}" />
 
       <Border Grid.Column="2"
+              Classes="surface"
               MinHeight="150"
               MinWidth="300"
-              BorderBrush="{DynamicResource AppBorderBrush}"
-              BorderThickness="1"
-              CornerRadius="{DynamicResource AppCornerRadius}"
-              Padding="14,10">
+              Padding="14,12">
         <Grid RowDefinitions="Auto,Auto,*"
               RowSpacing="8">
           <Grid Grid.Row="0"
@@ -524,7 +429,7 @@
                           Spacing="10">
                 <TextBlock Classes="section-label"
                            VerticalAlignment="Center"
-                           Text="REFERENCES" />
+                           Text="References" />
                 <Button Classes="direction-button"
                         Classes.active="{Binding ObjectReferences.IsOutgoing}"
                         AutomationProperties.Name="Show outgoing references"
@@ -578,7 +483,7 @@
             <StackPanel IsVisible="{Binding ObjectReferences.ShowLoading}"
                         Margin="0,8"
                         Spacing="10">
-              <Button Classes="dashboard-action"
+              <Button Classes="app-button"
                       HorizontalAlignment="Left"
                       AutomationProperties.Name="Cancel loading object references"
                       Command="{Binding ObjectReferences.CancelCommand}"
@@ -663,22 +568,20 @@
                     Width="6"
                     HorizontalAlignment="Stretch"
                     VerticalAlignment="Stretch"
-                    Background="{DynamicResource AppBorderBrush}" />
+                    Background="{DynamicResource AppSurfaceSubtleBrush}" />
 
       <Border Grid.Column="4"
+              Classes="surface"
               MinHeight="150"
               MinWidth="300"
-              BorderBrush="{DynamicResource AppBorderBrush}"
-              BorderThickness="1"
-              CornerRadius="{DynamicResource AppCornerRadius}"
-              Padding="14,10">
+              Padding="14,12">
         <Grid RowDefinitions="Auto,Auto,*"
               RowSpacing="8">
           <Grid Grid.Row="0"
                 ColumnDefinitions="*,Auto"
                 ColumnSpacing="16">
             <StackPanel Spacing="2">
-              <TextBlock Classes="section-label" Text="PATH TO ROOT" />
+              <TextBlock Classes="section-label" Text="Path to root" />
               <TextBlock MaxWidth="420"
                          FontWeight="SemiBold"
                          Foreground="{DynamicResource AppTextPrimaryBrush}"
@@ -721,7 +624,7 @@
             <StackPanel IsVisible="{Binding GcRoots.ShowLoading}"
                         Margin="0,8"
                         Spacing="10">
-              <Button Classes="dashboard-action"
+              <Button Classes="app-button"
                       HorizontalAlignment="Left"
                       AutomationProperties.Name="Cancel finding paths to root"
                       Command="{Binding GcRoots.CancelCommand}"
