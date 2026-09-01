@@ -7,6 +7,12 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets/memscope.ico</ApplicationIcon>
   </PropertyGroup>
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <MacOSAppBundlePath>$(MSBuildProjectDirectory)/bin/$(Configuration)/$(TargetFramework)/MemScope.app</MacOSAppBundlePath>
+    <OutputPath>$(MacOSAppBundlePath)/Contents/MacOS/</OutputPath>
+    <UseAppHost>true</UseAppHost>
+  </PropertyGroup>
   <ItemGroup>
     <AvaloniaResource Include="Assets/memscope.ico" />
   </ItemGroup>
@@ -22,4 +28,20 @@
     <ProjectReference Include="../MemoryProfiler.Diagnostics/MemoryProfiler.Diagnostics.csproj" />
     <ProjectReference Include="../MemoryProfiler.Storage/MemoryProfiler.Storage.csproj" />
   </ItemGroup>
+  <Target Name="PrepareMacOSAppBundle"
+          AfterTargets="Build"
+          Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <MakeDir Directories="$(MacOSAppBundlePath)/Contents/Resources" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/Platforms/macOS/Info.plist"
+          DestinationFolder="$(MacOSAppBundlePath)/Contents"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/Assets/memscope.icns"
+          DestinationFolder="$(MacOSAppBundlePath)/Contents/Resources"
+          SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="CleanMacOSAppBundle"
+          AfterTargets="Clean"
+          Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <RemoveDir Directories="$(MacOSAppBundlePath)" />
+  </Target>
 </Project>

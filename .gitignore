@@ -22,4 +22,7 @@ TestResults/
 # Visual Studio
 .vs/
 
+.reasonix/
 reasonix.toml
+
+graphify-out/
