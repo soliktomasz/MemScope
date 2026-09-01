@@ -224,6 +224,40 @@
           RowDefinitions="2*,6,*">
       <Grid Grid.Row="0"
             RowDefinitions="Auto,*">
+        <StackPanel IsVisible="{Binding ShowRetainedSizeProgress}"
+                    Margin="10,6,10,0"
+                    VerticalAlignment="Top"
+                    Spacing="6">
+          <ProgressBar Height="2"
+                       Minimum="0"
+                       Maximum="1"
+                       IsVisible="{Binding IsComputingRetainedSizes}"
+                       Value="{Binding RetainedSizeProgress}"
+                       AutomationProperties.Name="Computing retained sizes"
+                       AutomationProperties.LiveSetting="Polite" />
+          <TextBlock IsVisible="{Binding IsComputingRetainedSizes}"
+                     Classes="secondary"
+                     FontSize="12"
+                     Text="{Binding RetainedSizeStatusText}" />
+          <Button IsVisible="{Binding IsComputingRetainedSizes}"
+                  Classes="dashboard-action"
+                  HorizontalAlignment="Left"
+                  AutomationProperties.Name="Cancel retained size analysis"
+                  Command="{Binding CancelRetainedSizeCommand}"
+                  Content="Cancel" />
+          <Border IsVisible="{Binding HasRetainedSizeError}"
+                  Padding="12,9"
+                  CornerRadius="{DynamicResource AppCornerRadius}"
+                  AutomationProperties.Name="{Binding RetainedSizeStatusText}"
+                  AutomationProperties.LiveSetting="Assertive"
+                  Background="{DynamicResource AppErrorSurfaceBrush}">
+            <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
+                       FontSize="13"
+                       TextWrapping="Wrap"
+                       Text="{Binding RetainedSizeStatusText}" />
+          </Border>
+        </StackPanel>
+
         <Grid Grid.Row="1">
           <StackPanel IsVisible="{Binding ShowLoading}"
                       Margin="10,22"
@@ -329,39 +363,6 @@
             </DataGrid.Columns>
           </DataGrid>
 
-          <StackPanel IsVisible="{Binding ShowRetainedSizeProgress}"
-                      Margin="10,6,10,0"
-                      VerticalAlignment="Top"
-                      Spacing="6">
-            <ProgressBar Height="2"
-                         Minimum="0"
-                         Maximum="1"
-                         IsVisible="{Binding IsComputingRetainedSizes}"
-                         Value="{Binding RetainedSizeProgress}"
-                         AutomationProperties.Name="Computing retained sizes"
-                         AutomationProperties.LiveSetting="Polite" />
-            <TextBlock IsVisible="{Binding IsComputingRetainedSizes}"
-                       Classes="secondary"
-                       FontSize="12"
-                       Text="{Binding RetainedSizeStatusText}" />
-            <Button IsVisible="{Binding IsComputingRetainedSizes}"
-                    Classes="dashboard-action"
-                    HorizontalAlignment="Left"
-                    AutomationProperties.Name="Cancel retained size analysis"
-                    Command="{Binding CancelRetainedSizeCommand}"
-                    Content="Cancel" />
-            <Border IsVisible="{Binding HasRetainedSizeError}"
-                    Padding="12,9"
-                    CornerRadius="{DynamicResource AppCornerRadius}"
-                    AutomationProperties.Name="{Binding RetainedSizeStatusText}"
-                    AutomationProperties.LiveSetting="Assertive"
-                    Background="{DynamicResource AppErrorSurfaceBrush}">
-              <TextBlock Foreground="{DynamicResource AppErrorTextBrush}"
-                         FontSize="13"
-                         TextWrapping="Wrap"
-                         Text="{Binding RetainedSizeStatusText}" />
-            </Border>
-          </StackPanel>
         </Grid>
       </Grid>
 
