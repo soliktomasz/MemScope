@@ -19,11 +19,8 @@ public sealed class DominatorTreeServiceAcceptanceTests
 
         try
         {
-            fixture = await LiveTargetFixture.StartAsync();
+            fixture = await LiveTargetFixture.StartAsync(leakPhase: true);
             Environment.SetEnvironmentVariable("TMPDIR", fixture.SocketRoot);
-            // Let the target accumulate a healthy chunk set (one 64 KiB chunk
-            // every 50 ms) so the owner is unambiguous: ~40 chunks after 2 s.
-            await Task.Delay(TimeSpan.FromSeconds(2));
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(90));
             var client = new DiagnosticsClient(fixture.ProcessId);
             await client.WriteDumpAsync(

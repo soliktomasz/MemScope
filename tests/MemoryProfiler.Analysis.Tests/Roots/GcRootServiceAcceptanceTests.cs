@@ -82,7 +82,7 @@ public sealed class GcRootServiceAcceptanceTests
                     Assert.False(string.IsNullOrWhiteSpace(root.Kind));
                 });
 
-            // The target's main thread keeps the chunk alive through its local
+            // The target's static holder keeps the chunk alive through its
             // list: the profiler must surface a well-formed chain from a root
             // down to the chunk.
             var chainRoots = roots
