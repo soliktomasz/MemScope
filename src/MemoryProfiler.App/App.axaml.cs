@@ -41,7 +41,8 @@ public partial class App : Application
                 new GcRootService(),
                 new DominatorTreeService(),
                 new SnapshotComparisonService(),
-                new JsonSessionRepository());
+                new JsonSessionRepository(),
+                new AvaloniaClipboardService(() => mainWindow));
             mainWindow = new MainWindow(viewModel);
             desktop.MainWindow = mainWindow;
             _ = viewModel.InitializeAsync();

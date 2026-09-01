@@ -13,6 +13,7 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
     private readonly IHeapObjectRepository _repository;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly CancellationTokenSource _disposeCancellation = new();
+    private readonly RelayCommand _cancelCommand;
     private ObservableCollection<HeapObjectRowViewModel> _instances = [];
     private ReadOnlyObservableCollection<HeapObjectRowViewModel> _instancesView;
     private CancellationTokenSource? _loadCancellation;
@@ -32,6 +33,7 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
         _repository = repository;
         _uiDispatcher = uiDispatcher;
         _instancesView = new ReadOnlyObservableCollection<HeapObjectRowViewModel>(_instances);
+        _cancelCommand = new RelayCommand(CancelLoad, () => IsLoading);
     }
 
     public ReadOnlyObservableCollection<HeapObjectRowViewModel> Instances => _instancesView;
@@ -62,6 +64,8 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
     public bool ShowEmpty => HasSelection && !IsLoading && !HasError && _instances.Count == 0;
 
     public bool ShowTable => HasSelection && !IsLoading && !HasError && _instances.Count > 0;
+
+    public System.Windows.Input.ICommand CancelCommand => _cancelCommand;
 
     public async Task ShowAsync(
         HeapSnapshot snapshot,
@@ -280,5 +284,6 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
         OnPropertyChanged(nameof(ShowError));
         OnPropertyChanged(nameof(ShowEmpty));
         OnPropertyChanged(nameof(ShowTable));
+        _cancelCommand.NotifyCanExecuteChanged();
     }
 }

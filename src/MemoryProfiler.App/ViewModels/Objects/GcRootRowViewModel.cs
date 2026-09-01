@@ -16,7 +16,8 @@ public sealed class GcRootRowViewModel
         string typeNameDisplay,
         ulong endpointAddress,
         string endpointTypeName,
-        bool canNavigate)
+        bool canNavigate,
+        string rootPathDisplay = "")
     {
         Depth = depth;
         IsRoot = isRoot;
@@ -28,6 +29,7 @@ public sealed class GcRootRowViewModel
         EndpointAddress = endpointAddress;
         EndpointTypeName = endpointTypeName;
         CanNavigate = canNavigate;
+        RootPathDisplay = rootPathDisplay;
     }
 
     public int Depth { get; }
@@ -49,6 +51,8 @@ public sealed class GcRootRowViewModel
     public string EndpointTypeName { get; }
 
     public bool CanNavigate { get; }
+
+    public string RootPathDisplay { get; }
 
     public Thickness IndentMargin =>
         new(8 + Depth * 16, 0, 0, 0);

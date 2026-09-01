@@ -40,6 +40,43 @@ internal sealed class AsyncCommand(
         CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 }
 
+internal sealed class AsyncCommand<T>(
+    Func<T?, Task> execute,
+    Func<T?, bool>? canExecute = null) : ICommand
+{
+    private bool _isExecuting;
+
+    public event EventHandler? CanExecuteChanged;
+
+    public bool CanExecute(object? parameter) =>
+        !_isExecuting && (canExecute?.Invoke((T?)parameter) ?? true);
+
+    public async void Execute(object? parameter) => await ExecuteAsync((T?)parameter);
+
+    public async Task ExecuteAsync(T? parameter)
+    {
+        if (!CanExecute(parameter))
+        {
+            return;
+        }
+
+        _isExecuting = true;
+        NotifyCanExecuteChanged();
+        try
+        {
+            await execute(parameter);
+        }
+        finally
+        {
+            _isExecuting = false;
+            NotifyCanExecuteChanged();
+        }
+    }
+
+    public void NotifyCanExecuteChanged() =>
+        CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+}
+
 internal sealed class RelayCommand(
     Action execute,
     Func<bool>? canExecute = null) : ICommand

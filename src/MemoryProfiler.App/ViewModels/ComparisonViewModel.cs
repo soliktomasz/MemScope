@@ -23,6 +23,7 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
     private readonly AsyncCommand _pickBeforeCommand;
     private readonly AsyncCommand _pickAfterCommand;
     private readonly AsyncCommand _compareCommand;
+    private readonly RelayCommand _cancelCommand;
     private string _beforePath = string.Empty;
     private string _afterPath = string.Empty;
     private CancellationTokenSource? _compareCancellation;
@@ -62,6 +63,7 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
         _compareCommand = new AsyncCommand(
             () => CompareAsync(),
             () => HasBefore && HasAfter && !IsLoading);
+        _cancelCommand = new RelayCommand(CancelCompare, () => IsLoading);
         Table.PropertyChanged += OnTablePropertyChanged;
     }
 
@@ -74,6 +76,8 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
     public System.Windows.Input.ICommand PickAfterCommand => _pickAfterCommand;
 
     public System.Windows.Input.ICommand CompareCommand => _compareCommand;
+
+    public System.Windows.Input.ICommand CancelCommand => _cancelCommand;
 
     public string BeforePath
     {
@@ -113,6 +117,7 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
             if (SetProperty(ref _isLoading, value))
             {
                 _compareCommand.NotifyCanExecuteChanged();
+                _cancelCommand.NotifyCanExecuteChanged();
                 NotifyDisplayStateChanged();
             }
         }

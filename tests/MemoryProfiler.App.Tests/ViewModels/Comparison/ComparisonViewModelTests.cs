@@ -338,6 +338,42 @@ public sealed class ComparisonViewModelTests
     }
 
     [Fact]
+    public async Task CancelCommandStopsAnInFlightComparisonWithoutAnError()
+    {
+        var started = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancelled = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var loader = new StubComparisonLoader(async (_, cancellationToken) =>
+        {
+            started.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                cancelled.TrySetResult();
+                throw;
+            }
+
+            return BeforeSnapshot();
+        });
+        await using var viewModel = CreateViewModel(loader, new StubDumpFilePicker());
+
+        var load = viewModel.LoadAsync("before.dmp", "after.dmp");
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(viewModel.CancelCommand.CanExecute(null));
+
+        viewModel.CancelCommand.Execute(null);
+        await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await load;
+
+        Assert.False(viewModel.IsLoading);
+        Assert.False(viewModel.HasError);
+    }
+
+    [Fact]
     public async Task LoadAcceptsExternalCancellationAndReportsIt()
     {
         var started = new TaskCompletionSource(

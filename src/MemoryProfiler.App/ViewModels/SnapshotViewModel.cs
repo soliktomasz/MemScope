@@ -8,6 +8,7 @@ using MemoryProfiler.Analysis.Roots;
 using MemoryProfiler.App.Models;
 using MemoryProfiler.App.Errors;
 using MemoryProfiler.App.Navigation;
+using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels.Objects;
 using MemoryProfiler.App.ViewModels.Overview;
 using MemoryProfiler.App.ViewModels.Types;
@@ -28,10 +29,16 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
     private readonly InvestigationNavigationService _navigation = new();
     private readonly RelayCommand _goBackCommand;
     private readonly RelayCommand _goForwardCommand;
+    private readonly AsyncCommand<TypeRowViewModel> _copyTypeNameCommand;
+    private readonly AsyncCommand<object> _copyObjectAddressCommand;
+    private readonly AsyncCommand<GcRootRowViewModel> _copyGcRootPathCommand;
+    private readonly RelayCommand _cancelLoadCommand;
+    private readonly InvestigationClipboard _clipboard;
     private HeapSnapshot? _snapshot;
     private ProfilerError? _error;
     private bool _isLoading;
     private CancellationTokenSource? _retainedSizeCancellation;
+    private CancellationTokenSource? _activeLoadCancellation;
     private int _retainedSizeVersion;
     private bool _isComputingRetainedSizes;
     private double _retainedSizeProgress;
@@ -46,7 +53,8 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         IGcRootService gcRootService,
         IUiDispatcher uiDispatcher,
         Func<Task>? close = null,
-        IDominatorTreeService? dominatorService = null)
+        IDominatorTreeService? dominatorService = null,
+        IClipboardService? clipboardService = null)
     {
         ArgumentNullException.ThrowIfNull(loader);
         ArgumentNullException.ThrowIfNull(objectRepository);
@@ -56,6 +64,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         _loader = loader;
         _dominatorService = dominatorService;
         _uiDispatcher = uiDispatcher;
+        _clipboard = new InvestigationClipboard(clipboardService ?? new NullClipboardService());
         _closeCommand = new AsyncCommand(close ?? (() => Task.CompletedTask));
         _showOutgoingReferencesCommand = new RelayCommand<object>(
             ShowOutgoingReferences,
@@ -72,6 +81,16 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         _goForwardCommand = new RelayCommand(
             _navigation.GoForward,
             () => _navigation.CanGoForward);
+        _copyTypeNameCommand = new AsyncCommand<TypeRowViewModel>(
+            row => _clipboard.CopyTypeNameAsync(row!),
+            row => row is not null && !string.IsNullOrWhiteSpace(row.TypeName));
+        _copyObjectAddressCommand = new AsyncCommand<object>(
+            CopyObjectAddressAsync,
+            CanCopyObjectAddress);
+        _copyGcRootPathCommand = new AsyncCommand<GcRootRowViewModel>(
+            row => _clipboard.CopyGcRootPathAsync(row!),
+            row => row is not null && !string.IsNullOrWhiteSpace(row.RootPathDisplay));
+        _cancelLoadCommand = new RelayCommand(CancelActiveLoad, () => IsLoading);
         ObjectInstances = new ObjectInstancesViewModel(objectRepository, uiDispatcher);
         ObjectReferences = new ObjectReferencesViewModel(referenceService, uiDispatcher);
         GcRoots = new GcRootsViewModel(gcRootService, uiDispatcher);
@@ -102,6 +121,14 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
 
     public System.Windows.Input.ICommand GoForwardCommand => _goForwardCommand;
 
+    public System.Windows.Input.ICommand CopyTypeNameCommand => _copyTypeNameCommand;
+
+    public System.Windows.Input.ICommand CopyObjectAddressCommand => _copyObjectAddressCommand;
+
+    public System.Windows.Input.ICommand CopyGcRootPathCommand => _copyGcRootPathCommand;
+
+    public System.Windows.Input.ICommand CancelLoadCommand => _cancelLoadCommand;
+
     public bool CanGoBack => _navigation.CanGoBack;
 
     public bool CanGoForward => _navigation.CanGoForward;
@@ -114,6 +141,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
             if (SetProperty(ref _isLoading, value))
             {
                 OnPropertyChanged(nameof(IsReady));
+                _cancelLoadCommand.NotifyCanExecuteChanged();
                 NotifyDisplayStateChanged();
             }
         }
@@ -209,9 +237,11 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        CancelActiveLoad();
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
             _loadCancellation.Token);
+        _activeLoadCancellation = linked;
 
         // A new snapshot supersedes any in-flight retained-size computation:
         // cancel it up front (a version bump below keeps a stale result from
@@ -288,6 +318,10 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         finally
         {
             await PublishAsync(() => IsLoading = false).ConfigureAwait(false);
+            if (ReferenceEquals(_activeLoadCancellation, linked))
+            {
+                _activeLoadCancellation = null;
+            }
         }
     }
 
@@ -300,6 +334,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
 
         try
         {
+            CancelActiveLoad();
             _loadCancellation.Cancel();
         }
         catch (ObjectDisposedException)
@@ -486,6 +521,25 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         cancellation.Dispose();
     }
 
+    private void CancelActiveLoad()
+    {
+        var cancellation = _activeLoadCancellation;
+        _activeLoadCancellation = null;
+        if (cancellation is null)
+        {
+            return;
+        }
+
+        try
+        {
+            cancellation.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The load already completed and released its token source.
+        }
+    }
+
     private async Task RefreshInstancesAsync()
     {
         try
@@ -665,6 +719,24 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
             ObjectReferenceRowViewModel { CanNavigate: true } => true,
             GcRootRowViewModel { CanNavigate: true } => true,
             _ => false,
+        };
+
+    private static bool CanCopyObjectAddress(object? parameter) =>
+        parameter switch
+        {
+            HeapObjectRowViewModel => true,
+            ObjectReferenceRowViewModel { CanNavigate: true } => true,
+            GcRootRowViewModel { CanNavigate: true } => true,
+            _ => false,
+        };
+
+    private Task CopyObjectAddressAsync(object? parameter) =>
+        parameter switch
+        {
+            HeapObjectRowViewModel row => _clipboard.CopyObjectAddressAsync(row),
+            ObjectReferenceRowViewModel row => _clipboard.CopyObjectAddressAsync(row),
+            GcRootRowViewModel row => _clipboard.CopyObjectAddressAsync(row),
+            _ => Task.CompletedTask,
         };
 
     private static bool TryResolveEndpoint(

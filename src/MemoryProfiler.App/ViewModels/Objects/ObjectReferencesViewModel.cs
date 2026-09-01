@@ -14,6 +14,7 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
     private readonly IObjectReferenceService _service;
     private readonly IUiDispatcher _uiDispatcher;
     private readonly CancellationTokenSource _disposeCancellation = new();
+    private readonly RelayCommand _cancelCommand;
     private readonly AsyncCommand _showOutgoingCommand;
     private readonly AsyncCommand _showIncomingCommand;
     private ObservableCollection<ObjectReferenceRowViewModel> _references = [];
@@ -37,6 +38,7 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
         _service = service;
         _uiDispatcher = uiDispatcher;
         _referencesView = new ReadOnlyObservableCollection<ObjectReferenceRowViewModel>(_references);
+        _cancelCommand = new RelayCommand(CancelLoad, () => IsLoading);
         _showOutgoingCommand = new AsyncCommand(
             ShowOutgoingAsync,
             () => HasSelection);
@@ -96,6 +98,8 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
     public System.Windows.Input.ICommand ShowOutgoingCommand => _showOutgoingCommand;
 
     public System.Windows.Input.ICommand ShowIncomingCommand => _showIncomingCommand;
+
+    public System.Windows.Input.ICommand CancelCommand => _cancelCommand;
 
     public async Task ShowAsync(
         HeapSnapshot snapshot,
@@ -385,6 +389,7 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
         OnPropertyChanged(nameof(ShowError));
         OnPropertyChanged(nameof(ShowEmpty));
         OnPropertyChanged(nameof(ShowTable));
+        _cancelCommand.NotifyCanExecuteChanged();
     }
 
     private void NotifyDirectionCommandsCanExecuteChanged()
