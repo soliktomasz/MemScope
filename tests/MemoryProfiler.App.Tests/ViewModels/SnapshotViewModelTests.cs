@@ -735,6 +735,7 @@ public sealed class SnapshotViewModelTests
         Assert.True(viewModel.ShowRetainedSizeProgress);
         Assert.Equal(0.42, viewModel.RetainedSizeProgress, precision: 10);
         Assert.Contains("42%", viewModel.RetainedSizeStatusText);
+        Assert.True(viewModel.CancelRetainedSizeCommand.CanExecute(null));
 
         // Await the fire-and-forget continuation's publish deterministically:
         // subscribe to the state change before completing the gate, then wait

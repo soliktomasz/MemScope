@@ -134,59 +134,30 @@
             </Grid>
 
             <Grid Grid.Row="3">
-              <Grid IsVisible="{Binding ProcessPicker.HasProcesses}"
-                    RowDefinitions="Auto,*">
-                <Grid Grid.Row="0"
-                      ColumnDefinitions="120,*,190"
-                      Background="{DynamicResource AppSurfaceSubtleBrush}">
-                  <Button Grid.Column="0"
-                          Classes="column-header"
-                          Command="{Binding ProcessPicker.SortByProcessIdCommand}"
-                          ToolTip.Tip="{Binding ProcessPicker.ProcessIdSortDescription}"
-                          Content="{Binding ProcessPicker.ProcessIdHeader}" />
-                  <Button Grid.Column="1"
-                          Classes="column-header"
-                          Command="{Binding ProcessPicker.SortByNameCommand}"
-                          ToolTip.Tip="{Binding ProcessPicker.NameSortDescription}"
-                          Content="{Binding ProcessPicker.NameHeader}" />
-                  <Button Grid.Column="2"
-                          Classes="column-header"
-                          Command="{Binding ProcessPicker.SortByRuntimeCommand}"
-                          ToolTip.Tip="{Binding ProcessPicker.RuntimeSortDescription}"
-                          Content="{Binding ProcessPicker.RuntimeHeader}" />
-                </Grid>
-
-                <ListBox Grid.Row="1"
-                         Classes="process-list"
-                         AutomationProperties.Name="Attachable .NET processes"
-                         ItemsSource="{Binding ProcessPicker.Processes}"
-                         SelectedItem="{Binding ProcessPicker.SelectedProcess, Mode=TwoWay}">
-                  <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="vm:ProcessRowViewModel">
-                      <Grid ColumnDefinitions="120,*,190"
-                            MinHeight="38">
-                        <TextBlock Grid.Column="0"
-                                   Margin="10,0"
-                                   VerticalAlignment="Center"
-                                   Foreground="{DynamicResource AppTextPrimaryBrush}"
-                                   Text="{Binding ProcessId}" />
-                        <TextBlock Grid.Column="1"
-                                   Margin="10,0"
-                                   VerticalAlignment="Center"
-                                   Foreground="{DynamicResource AppTextPrimaryBrush}"
-                                   TextTrimming="CharacterEllipsis"
-                                   Text="{Binding Name}" />
-                        <TextBlock Grid.Column="2"
-                                   Margin="10,0"
-                                   VerticalAlignment="Center"
-                                   Foreground="{DynamicResource AppTextSecondaryBrush}"
-                                   TextTrimming="CharacterEllipsis"
-                                   Text="{Binding RuntimeDisplay}" />
-                      </Grid>
-                    </DataTemplate>
-                  </ListBox.ItemTemplate>
-                </ListBox>
-              </Grid>
+              <DataGrid IsVisible="{Binding ProcessPicker.HasProcesses}"
+                        AutoGenerateColumns="False"
+                        CanUserResizeColumns="True"
+                        CanUserSortColumns="True"
+                        IsReadOnly="True"
+                        GridLinesVisibility="Horizontal"
+                        AutomationProperties.Name="Attachable .NET processes"
+                        ItemsSource="{Binding ProcessPicker.Processes}"
+                        SelectedItem="{Binding ProcessPicker.SelectedProcess, Mode=TwoWay}">
+                <DataGrid.Columns>
+                  <DataGridTextColumn Header="PID"
+                                      Width="120"
+                                      SortMemberPath="ProcessId"
+                                      Binding="{Binding ProcessId}" />
+                  <DataGridTextColumn Header="Process"
+                                      Width="*"
+                                      SortMemberPath="Name"
+                                      Binding="{Binding Name}" />
+                  <DataGridTextColumn Header="Runtime"
+                                      Width="190"
+                                      SortMemberPath="RuntimeDisplay"
+                                      Binding="{Binding RuntimeDisplay}" />
+                </DataGrid.Columns>
+              </DataGrid>
 
               <StackPanel IsVisible="{Binding ProcessPicker.ShowLoadingPlaceholders}"
                           Spacing="18"

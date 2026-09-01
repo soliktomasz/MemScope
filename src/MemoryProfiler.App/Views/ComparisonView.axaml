@@ -146,6 +146,11 @@
         <TextBlock Classes="secondary"
                    FontSize="12"
                    Text="{Binding StatusText}" />
+        <Button Classes="dashboard-action"
+                HorizontalAlignment="Left"
+                AutomationProperties.Name="Cancel snapshot comparison"
+                Command="{Binding CancelCommand}"
+                Content="Cancel" />
       </StackPanel>
 
       <Grid Grid.Row="1" IsVisible="{Binding ShowError}">
@@ -192,83 +197,34 @@
       </Grid>
     </Grid>
 
-    <Grid Grid.Row="3" RowDefinitions="Auto,*">
-      <Grid Grid.Row="0"
-            IsVisible="{Binding ShowTable}"
-            ColumnDefinitions="*,120,110,110"
-            ColumnSpacing="8"
-            Background="{DynamicResource AppSurfaceSubtleBrush}">
-        <Button Grid.Column="0"
-                Classes="table-header"
-                Command="{Binding Table.SortByTypeNameCommand}"
-                ToolTip.Tip="{Binding Table.TypeNameSortDescription}"
-                Content="{Binding Table.TypeNameHeader}" />
-        <Button Grid.Column="1"
-                Classes="table-header"
-                HorizontalContentAlignment="Right"
-                Command="{Binding Table.SortByCountDeltaCommand}"
-                ToolTip.Tip="{Binding Table.CountDeltaSortDescription}"
-                Content="{Binding Table.CountDeltaHeader}" />
-        <Button Grid.Column="2"
-                Classes="table-header"
-                HorizontalContentAlignment="Right"
-                Command="{Binding Table.SortBySizeDeltaCommand}"
-                ToolTip.Tip="{Binding Table.SizeDeltaSortDescription}"
-                Content="{Binding Table.SizeDeltaHeader}" />
-        <Button Grid.Column="3"
-                Classes="table-header"
-                HorizontalContentAlignment="Right"
-                Command="{Binding Table.SortByRetainedDeltaCommand}"
-                ToolTip.Tip="{Binding Table.RetainedDeltaSortDescription}"
-                Content="{Binding Table.RetainedDeltaHeader}" />
-      </Grid>
-
-      <ListBox Grid.Row="1"
-               Classes="delta-list"
-               AutomationProperties.Name="Type memory changes"
-               IsVisible="{Binding ShowTable}"
-               ItemsSource="{Binding Table.FilteredDeltas}">
-        <ListBox.ItemTemplate>
-          <DataTemplate x:DataType="cmp:TypeDeltaRowViewModel">
-            <Grid ColumnDefinitions="*,120,110,110"
-                  MinHeight="30">
-              <TextBlock Grid.Column="0"
-                         Margin="10,0"
-                         VerticalAlignment="Center"
-                         Foreground="{DynamicResource AppTextPrimaryBrush}"
-                         TextTrimming="CharacterEllipsis"
-                         ToolTip.Tip="{Binding TypeName}"
-                         Text="{Binding TypeName}" />
-              <TextBlock Grid.Column="1"
-                         Margin="10,0"
-                         VerticalAlignment="Center"
-                         HorizontalAlignment="Right"
-                         Classes="mono-data"
-                         Text="{Binding CountDeltaDisplay}" />
-              <TextBlock Grid.Column="2"
-                         Margin="10,0"
-                         VerticalAlignment="Center"
-                         HorizontalAlignment="Right"
-                         Classes="mono-data"
-                         Text="{Binding SizeDeltaDisplay}" />
-              <TextBlock Grid.Column="3"
-                         Margin="10,0"
-                         VerticalAlignment="Center"
-                         HorizontalAlignment="Right"
-                         IsVisible="{Binding IsRetainedDeltaAvailable}"
-                         Classes="mono-data"
-                         Text="{Binding RetainedDeltaDisplay}" />
-              <TextBlock Grid.Column="3"
-                         Margin="10,0"
-                         VerticalAlignment="Center"
-                         HorizontalAlignment="Right"
-                         IsVisible="{Binding IsRetainedDeltaUnavailable}"
-                         Classes="secondary"
-                         Text="N/A" />
-            </Grid>
-          </DataTemplate>
-        </ListBox.ItemTemplate>
-      </ListBox>
+    <Grid Grid.Row="3">
+      <DataGrid AutomationProperties.Name="Type memory changes"
+                IsVisible="{Binding ShowTable}"
+                AutoGenerateColumns="False"
+                CanUserResizeColumns="True"
+                CanUserSortColumns="True"
+                IsReadOnly="True"
+                GridLinesVisibility="Horizontal"
+                ItemsSource="{Binding Table.FilteredDeltas}">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="Type"
+                              Width="*"
+                              SortMemberPath="TypeName"
+                              Binding="{Binding TypeName}" />
+          <DataGridTextColumn Header="Count delta"
+                              Width="120"
+                              SortMemberPath="CountDelta"
+                              Binding="{Binding CountDeltaDisplay}" />
+          <DataGridTextColumn Header="Size delta"
+                              Width="110"
+                              SortMemberPath="SizeDelta"
+                              Binding="{Binding SizeDeltaDisplay}" />
+          <DataGridTextColumn Header="Retained delta"
+                              Width="110"
+                              SortMemberPath="RetainedDelta"
+                              Binding="{Binding RetainedDeltaDisplay}" />
+        </DataGrid.Columns>
+      </DataGrid>
 
       <StackPanel IsVisible="{Binding ShowChoosePrompt}"
                   HorizontalAlignment="Center"

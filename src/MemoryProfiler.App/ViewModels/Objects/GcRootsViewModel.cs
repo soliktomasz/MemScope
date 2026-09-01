@@ -25,6 +25,7 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
     private bool _isLoading;
     private int _loadVersion;
     private int _disposed;
+    private GcRootRowViewModel? _selectedRow;
 
     internal GcRootsViewModel(
         IGcRootService service,
@@ -39,6 +40,12 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
     }
 
     public ReadOnlyObservableCollection<GcRootRowViewModel> Rows => _rowsView;
+
+    public GcRootRowViewModel? SelectedRow
+    {
+        get => _selectedRow;
+        set => SetProperty(ref _selectedRow, value);
+    }
 
     public string ObjectTypeName => _objectTypeName;
 
@@ -134,6 +141,7 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
             // state, so a failed or pending load can never show stale results
             // or a summary that contradicts the inspected object.
             _rows = [];
+            SelectedRow = null;
             _rowsView = new ReadOnlyObservableCollection<GcRootRowViewModel>(_rows);
             OnPropertyChanged(nameof(Rows));
             OnPropertyChanged(nameof(ObjectTypeName));

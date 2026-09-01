@@ -33,6 +33,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
     private readonly AsyncCommand<object> _copyObjectAddressCommand;
     private readonly AsyncCommand<GcRootRowViewModel> _copyGcRootPathCommand;
     private readonly RelayCommand _cancelLoadCommand;
+    private readonly RelayCommand _cancelRetainedSizeCommand;
     private readonly InvestigationClipboard _clipboard;
     private HeapSnapshot? _snapshot;
     private ProfilerError? _error;
@@ -91,6 +92,9 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
             row => _clipboard.CopyGcRootPathAsync(row!),
             row => row is not null && !string.IsNullOrWhiteSpace(row.RootPathDisplay));
         _cancelLoadCommand = new RelayCommand(CancelActiveLoad, () => IsLoading);
+        _cancelRetainedSizeCommand = new RelayCommand(
+            CancelRetainedSizeLoad,
+            () => IsComputingRetainedSizes);
         ObjectInstances = new ObjectInstancesViewModel(objectRepository, uiDispatcher);
         ObjectReferences = new ObjectReferencesViewModel(referenceService, uiDispatcher);
         GcRoots = new GcRootsViewModel(gcRootService, uiDispatcher);
@@ -128,6 +132,9 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
     public System.Windows.Input.ICommand CopyGcRootPathCommand => _copyGcRootPathCommand;
 
     public System.Windows.Input.ICommand CancelLoadCommand => _cancelLoadCommand;
+
+    public System.Windows.Input.ICommand CancelRetainedSizeCommand =>
+        _cancelRetainedSizeCommand;
 
     public bool CanGoBack => _navigation.CanGoBack;
 
@@ -258,7 +265,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
             _isComputingRetainedSizes = false;
             OnPropertyChanged(nameof(RetainedSizeProgress));
             OnPropertyChanged(nameof(RetainedSizeStatusText));
-            OnPropertyChanged(nameof(IsComputingRetainedSizes));
+            NotifyRetainedSizeActivityChanged();
             OnPropertyChanged(nameof(ShowRetainedSizeProgress));
             OnPropertyChanged(nameof(HasRetainedSizeError));
             OnPropertyChanged(nameof(HasSnapshot));
@@ -399,7 +406,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
                 _isComputingRetainedSizes = true;
                 OnPropertyChanged(nameof(RetainedSizeProgress));
                 OnPropertyChanged(nameof(RetainedSizeStatusText));
-                OnPropertyChanged(nameof(IsComputingRetainedSizes));
+                NotifyRetainedSizeActivityChanged();
                 OnPropertyChanged(nameof(ShowRetainedSizeProgress));
                 OnPropertyChanged(nameof(HasRetainedSizeError));
             }).ConfigureAwait(false);
@@ -422,7 +429,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
                 _retainedSizeStatusText = string.Empty;
                 _isComputingRetainedSizes = false;
                 OnPropertyChanged(nameof(RetainedSizeStatusText));
-                OnPropertyChanged(nameof(IsComputingRetainedSizes));
+                NotifyRetainedSizeActivityChanged();
                 OnPropertyChanged(nameof(ShowRetainedSizeProgress));
                 OnPropertyChanged(nameof(HasRetainedSizeError));
             }).ConfigureAwait(false);
@@ -445,7 +452,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
                 _retainedSizeStatusText = "Retained sizes unavailable.";
                 _isComputingRetainedSizes = false;
                 OnPropertyChanged(nameof(RetainedSizeStatusText));
-                OnPropertyChanged(nameof(IsComputingRetainedSizes));
+                NotifyRetainedSizeActivityChanged();
                 OnPropertyChanged(nameof(ShowRetainedSizeProgress));
                 OnPropertyChanged(nameof(HasRetainedSizeError));
             }).ConfigureAwait(false);
@@ -460,7 +467,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
                 }
 
                 _isComputingRetainedSizes = false;
-                OnPropertyChanged(nameof(IsComputingRetainedSizes));
+                NotifyRetainedSizeActivityChanged();
                 OnPropertyChanged(nameof(ShowRetainedSizeProgress));
                 OnPropertyChanged(nameof(RetainedSizeStatusText));
             }).ConfigureAwait(false);
@@ -519,6 +526,12 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         }
 
         cancellation.Dispose();
+    }
+
+    private void NotifyRetainedSizeActivityChanged()
+    {
+        OnPropertyChanged(nameof(IsComputingRetainedSizes));
+        _cancelRetainedSizeCommand.NotifyCanExecuteChanged();
     }
 
     private void CancelActiveLoad()

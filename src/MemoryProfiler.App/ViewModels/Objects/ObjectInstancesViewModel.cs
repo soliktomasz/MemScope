@@ -23,6 +23,7 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
     private bool _isLoading;
     private int _loadVersion;
     private int _disposed;
+    private HeapObjectRowViewModel? _selectedInstance;
 
     internal ObjectInstancesViewModel(
         IHeapObjectRepository repository,
@@ -37,6 +38,12 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
     }
 
     public ReadOnlyObservableCollection<HeapObjectRowViewModel> Instances => _instancesView;
+
+    public HeapObjectRowViewModel? SelectedInstance
+    {
+        get => _selectedInstance;
+        set => SetProperty(ref _selectedInstance, value);
+    }
 
     public string TypeName => _type?.Name ?? string.Empty;
 
@@ -102,6 +109,7 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
             // state, so a failed or pending load can never show stale results
             // or a summary that contradicts the selected type name.
             _instances = [];
+            SelectedInstance = null;
             _instancesView = new ReadOnlyObservableCollection<HeapObjectRowViewModel>(_instances);
             _totalSize = 0;
             OnPropertyChanged(nameof(Instances));

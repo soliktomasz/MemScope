@@ -193,7 +193,7 @@
         <TextBlock Classes="section-label" Text="SEARCH" />
         <TextBox MaxWidth="380"
                  AutomationProperties.Name="Search types"
-                 Watermark="Search type or namespace"
+                 PlaceholderText="Search type or namespace"
                  Text="{Binding Types.SearchText}" />
       </StackPanel>
       <StackPanel Grid.Column="1" Spacing="5">
@@ -207,7 +207,7 @@
         <TextBlock Classes="section-label" Text="MIN SIZE" />
         <TextBox Width="110"
                  AutomationProperties.Name="Minimum size filter"
-                 Watermark="e.g. 100 KB"
+                 PlaceholderText="e.g. 100 KB"
                  Text="{Binding Types.MinimumSizeText}" />
       </StackPanel>
       <StackPanel Grid.Column="3"
@@ -224,41 +224,6 @@
           RowDefinitions="2*,6,*">
       <Grid Grid.Row="0"
             RowDefinitions="Auto,*">
-        <Grid Grid.Row="0"
-              IsVisible="{Binding IsReady}"
-              ColumnDefinitions="*,190,120,110,100"
-              ColumnSpacing="8"
-              Background="{DynamicResource AppSurfaceSubtleBrush}">
-          <Button Grid.Column="0"
-                  Classes="table-header"
-                  Command="{Binding Types.SortByTypeNameCommand}"
-                  ToolTip.Tip="{Binding Types.TypeNameSortDescription}"
-                  Content="{Binding Types.TypeNameHeader}" />
-          <Button Grid.Column="1"
-                  Classes="table-header"
-                  Command="{Binding Types.SortByAssemblyCommand}"
-                  ToolTip.Tip="{Binding Types.AssemblySortDescription}"
-                  Content="{Binding Types.AssemblyHeader}" />
-          <Button Grid.Column="2"
-                  Classes="table-header"
-                  HorizontalContentAlignment="Right"
-                  Command="{Binding Types.SortByCountCommand}"
-                  ToolTip.Tip="{Binding Types.CountSortDescription}"
-                  Content="{Binding Types.CountHeader}" />
-          <Button Grid.Column="3"
-                  Classes="table-header"
-                  HorizontalContentAlignment="Right"
-                  Command="{Binding Types.SortByShallowSizeCommand}"
-                  ToolTip.Tip="{Binding Types.ShallowSizeSortDescription}"
-                  Content="{Binding Types.ShallowSizeHeader}" />
-          <Button Grid.Column="4"
-                  Classes="table-header"
-                  HorizontalContentAlignment="Right"
-                  Command="{Binding Types.SortByRetainedSizeCommand}"
-                  ToolTip.Tip="{Binding Types.RetainedSizeSortDescription}"
-                  Content="{Binding Types.RetainedSizeHeader}" />
-        </Grid>
-
         <Grid Grid.Row="1">
           <StackPanel IsVisible="{Binding ShowLoading}"
                       Margin="10,22"
@@ -270,6 +235,11 @@
             <TextBlock Classes="secondary"
                        FontSize="13"
                        Text="Analyzing the managed heap..." />
+            <Button Classes="dashboard-action"
+                    HorizontalAlignment="Left"
+                    AutomationProperties.Name="Cancel snapshot analysis"
+                    Command="{Binding CancelLoadCommand}"
+                    Content="Cancel" />
             <StackPanel Spacing="14">
               <Grid ColumnDefinitions="*,140,100,90" ColumnSpacing="28">
                 <Border Grid.Column="0" Classes="skeleton" />
@@ -334,60 +304,30 @@
             </StackPanel>
           </Border>
 
-          <ListBox Classes="type-list"
-                   IsVisible="{Binding ShowTable}"
-                   AutomationProperties.Name="Heap types"
-                   ItemsSource="{Binding Types.FilteredTypes}"
-                   SelectedItem="{Binding Types.SelectedType, Mode=TwoWay}">
-            <ListBox.ItemsPanel>
-              <ItemsPanelTemplate>
-                <VirtualizingStackPanel />
-              </ItemsPanelTemplate>
-            </ListBox.ItemsPanel>
-            <ListBox.ItemTemplate>
-              <DataTemplate x:DataType="types:TypeRowViewModel">
-                <Grid ColumnDefinitions="*,190,120,110,100"
-                      ColumnSpacing="8"
-                      MinHeight="34">
-                  <TextBlock Grid.Column="0"
-                             Margin="8,0"
-                             VerticalAlignment="Center"
-                             Foreground="{DynamicResource AppTextPrimaryBrush}"
-                             TextTrimming="CharacterEllipsis"
-                             ToolTip.Tip="{Binding TypeName}"
-                             Text="{Binding TypeName}" />
-                  <TextBlock Grid.Column="1"
-                             VerticalAlignment="Center"
-                             Classes="secondary"
-                             TextTrimming="CharacterEllipsis"
-                             ToolTip.Tip="{Binding AssemblyName}"
-                             Text="{Binding AssemblyName}" />
-                  <TextBlock Grid.Column="2"
-                             HorizontalAlignment="Right"
-                             VerticalAlignment="Center"
-                             Classes="mono-data"
-                             Text="{Binding CountDisplay}" />
-                  <TextBlock Grid.Column="3"
-                             HorizontalAlignment="Right"
-                             VerticalAlignment="Center"
-                             Classes="mono-data"
-                             Text="{Binding ShallowSizeDisplay}" />
-                  <TextBlock Grid.Column="4"
-                             IsVisible="{Binding IsRetainedSizeAvailable}"
-                             HorizontalAlignment="Right"
-                             VerticalAlignment="Center"
-                             Classes="mono-data"
-                             Text="{Binding RetainedSizeDisplay}" />
-                  <TextBlock Grid.Column="4"
-                             IsVisible="{Binding IsRetainedSizeUnavailable}"
-                             HorizontalAlignment="Right"
-                             VerticalAlignment="Center"
-                             Classes="secondary"
-                             Text="N/A" />
-                </Grid>
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
+          <DataGrid IsVisible="{Binding ShowTable}"
+                    AutomationProperties.Name="Heap types"
+                    AutoGenerateColumns="False"
+                    CanUserResizeColumns="True"
+                    CanUserSortColumns="True"
+                    IsReadOnly="True"
+                    GridLinesVisibility="Horizontal"
+                    ItemsSource="{Binding Types.FilteredTypes}"
+                    SelectedItem="{Binding Types.SelectedType, Mode=TwoWay}">
+            <DataGrid.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Copy Type Name"
+                          Command="{Binding CopyTypeNameCommand}"
+                          CommandParameter="{Binding Types.SelectedType}" />
+              </ContextMenu>
+            </DataGrid.ContextMenu>
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Type" Width="*" SortMemberPath="TypeName" Binding="{Binding TypeName}" />
+              <DataGridTextColumn Header="Assembly" Width="190" SortMemberPath="AssemblyName" Binding="{Binding AssemblyName}" />
+              <DataGridTextColumn Header="Count" Width="120" SortMemberPath="Type.ObjectCount" Binding="{Binding CountDisplay}" />
+              <DataGridTextColumn Header="Shallow size" Width="110" SortMemberPath="Type.ShallowSize" Binding="{Binding ShallowSizeDisplay}" />
+              <DataGridTextColumn Header="Retained size" Width="110" SortMemberPath="RetainedSize" Binding="{Binding RetainedSizeDisplay}" />
+            </DataGrid.Columns>
+          </DataGrid>
 
           <StackPanel IsVisible="{Binding ShowRetainedSizeProgress}"
                       Margin="10,6,10,0"
@@ -404,6 +344,12 @@
                        Classes="secondary"
                        FontSize="12"
                        Text="{Binding RetainedSizeStatusText}" />
+            <Button IsVisible="{Binding IsComputingRetainedSizes}"
+                    Classes="dashboard-action"
+                    HorizontalAlignment="Left"
+                    AutomationProperties.Name="Cancel retained size analysis"
+                    Command="{Binding CancelRetainedSizeCommand}"
+                    Content="Cancel" />
             <Border IsVisible="{Binding HasRetainedSizeError}"
                     Padding="12,9"
                     CornerRadius="{DynamicResource AppCornerRadius}"
@@ -465,19 +411,6 @@
             </StackPanel>
           </Grid>
 
-          <Grid Grid.Row="1"
-                IsVisible="{Binding ObjectInstances.ShowTable}"
-                ColumnDefinitions="*,120,110"
-                ColumnSpacing="8"
-                Background="{DynamicResource AppSurfaceSubtleBrush}">
-            <TextBlock Grid.Column="0" Classes="table-header" Text="Address" />
-            <TextBlock Grid.Column="1"
-                       Classes="table-header"
-                       HorizontalAlignment="Right"
-                       Text="Size" />
-            <TextBlock Grid.Column="2" Classes="table-header" Text="Generation" />
-          </Grid>
-
           <Grid Grid.Row="2">
             <StackPanel IsVisible="{Binding ObjectInstances.ShowIdle}"
                         HorizontalAlignment="Center"
@@ -492,6 +425,11 @@
             <StackPanel IsVisible="{Binding ObjectInstances.ShowLoading}"
                         Margin="0,8"
                         Spacing="10">
+              <Button Classes="dashboard-action"
+                      HorizontalAlignment="Left"
+                      AutomationProperties.Name="Cancel loading object instances"
+                      Command="{Binding ObjectInstances.CancelCommand}"
+                      Content="Cancel" />
               <Grid ColumnDefinitions="*,120,110" ColumnSpacing="8">
                 <Border Grid.Column="0" Classes="skeleton" />
                 <Border Grid.Column="1" Classes="skeleton" />
@@ -527,51 +465,38 @@
                          Text="This type has no objects on the managed heap." />
             </StackPanel>
 
-            <ListBox Classes="instance-list"
-                     IsVisible="{Binding ObjectInstances.ShowTable}"
-                     AutomationProperties.Name="Object instances"
-                     ItemsSource="{Binding ObjectInstances.Instances}">
-              <ListBox.ContextMenu>
+            <DataGrid IsVisible="{Binding ObjectInstances.ShowTable}"
+                      AutomationProperties.Name="Object instances"
+                      AutoGenerateColumns="False"
+                      CanUserResizeColumns="True"
+                      CanUserSortColumns="True"
+                      IsReadOnly="True"
+                      GridLinesVisibility="Horizontal"
+                      ItemsSource="{Binding ObjectInstances.Instances}"
+                      SelectedItem="{Binding ObjectInstances.SelectedInstance, Mode=TwoWay}">
+              <DataGrid.ContextMenu>
                 <ContextMenu>
+                  <MenuItem Header="Copy Object Address"
+                            Command="{Binding CopyObjectAddressCommand}"
+                            CommandParameter="{Binding ObjectInstances.SelectedInstance}" />
+                  <Separator />
                   <MenuItem Header="Show Outgoing References"
                             Command="{Binding ShowOutgoingReferencesCommand}"
-                            CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
+                            CommandParameter="{Binding ObjectInstances.SelectedInstance}" />
                   <MenuItem Header="Show Incoming References"
                             Command="{Binding ShowIncomingReferencesCommand}"
-                            CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
+                            CommandParameter="{Binding ObjectInstances.SelectedInstance}" />
                   <MenuItem Header="Show Path to Root"
                             Command="{Binding ShowPathToRootCommand}"
-                            CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
+                            CommandParameter="{Binding ObjectInstances.SelectedInstance}" />
                 </ContextMenu>
-              </ListBox.ContextMenu>
-              <ListBox.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <VirtualizingStackPanel />
-                </ItemsPanelTemplate>
-              </ListBox.ItemsPanel>
-              <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="objects:HeapObjectRowViewModel">
-                  <Grid ColumnDefinitions="*,120,110"
-                        ColumnSpacing="8"
-                        MinHeight="30">
-                    <TextBlock Grid.Column="0"
-                               Margin="8,0"
-                               VerticalAlignment="Center"
-                               Classes="mono-data"
-                               Text="{Binding AddressDisplay}" />
-                    <TextBlock Grid.Column="1"
-                               HorizontalAlignment="Right"
-                               VerticalAlignment="Center"
-                               Classes="mono-data"
-                               Text="{Binding SizeDisplay}" />
-                    <TextBlock Grid.Column="2"
-                               VerticalAlignment="Center"
-                               Classes="secondary"
-                               Text="{Binding GenerationDisplay}" />
-                  </Grid>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
+              </DataGrid.ContextMenu>
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="Address" Width="*" SortMemberPath="Instance.Address" Binding="{Binding AddressDisplay}" />
+                <DataGridTextColumn Header="Size" Width="120" SortMemberPath="Instance.Size" Binding="{Binding SizeDisplay}" />
+                <DataGridTextColumn Header="Generation" Width="110" SortMemberPath="GenerationDisplay" Binding="{Binding GenerationDisplay}" />
+              </DataGrid.Columns>
+            </DataGrid>
           </Grid>
         </Grid>
       </Border>
@@ -639,17 +564,6 @@
             </StackPanel>
           </Grid>
 
-          <Grid Grid.Row="1"
-                IsVisible="{Binding ObjectReferences.ShowTable}"
-                ColumnDefinitions="*,120,140,*"
-                ColumnSpacing="8"
-                Background="{DynamicResource AppSurfaceSubtleBrush}">
-            <TextBlock Grid.Column="0" Classes="table-header" Text="Field" />
-            <TextBlock Grid.Column="1" Classes="table-header" Text="Kind" />
-            <TextBlock Grid.Column="2" Classes="table-header" Text="Address" />
-            <TextBlock Grid.Column="3" Classes="table-header" Text="Type" />
-          </Grid>
-
           <Grid Grid.Row="2">
             <StackPanel IsVisible="{Binding ObjectReferences.ShowIdle}"
                         HorizontalAlignment="Center"
@@ -664,6 +578,11 @@
             <StackPanel IsVisible="{Binding ObjectReferences.ShowLoading}"
                         Margin="0,8"
                         Spacing="10">
+              <Button Classes="dashboard-action"
+                      HorizontalAlignment="Left"
+                      AutomationProperties.Name="Cancel loading object references"
+                      Command="{Binding ObjectReferences.CancelCommand}"
+                      Content="Cancel" />
               <Grid ColumnDefinitions="*,120,140,*" ColumnSpacing="8">
                 <Border Grid.Column="0" Classes="skeleton" />
                 <Border Grid.Column="1" Classes="skeleton" />
@@ -702,60 +621,40 @@
                          Text="{Binding ObjectReferences.EmptyHint}" />
             </StackPanel>
 
-            <ListBox Classes="reference-list"
-                     IsVisible="{Binding ObjectReferences.ShowTable}"
-                     AutomationProperties.Name="Object references"
-                     ItemsSource="{Binding ObjectReferences.References}"
-                     DoubleTapped="OnReferencesListDoubleTapped">
-              <ListBox.ContextMenu>
+            <DataGrid IsVisible="{Binding ObjectReferences.ShowTable}"
+                      AutomationProperties.Name="Object references"
+                      AutoGenerateColumns="False"
+                      CanUserResizeColumns="True"
+                      CanUserSortColumns="True"
+                      IsReadOnly="True"
+                      GridLinesVisibility="Horizontal"
+                      ItemsSource="{Binding ObjectReferences.References}"
+                      SelectedItem="{Binding ObjectReferences.SelectedReference, Mode=TwoWay}"
+                      DoubleTapped="OnReferencesListDoubleTapped">
+              <DataGrid.ContextMenu>
                 <ContextMenu>
+                  <MenuItem Header="Copy Object Address"
+                            Command="{Binding CopyObjectAddressCommand}"
+                            CommandParameter="{Binding ObjectReferences.SelectedReference}" />
+                  <Separator />
                   <MenuItem Header="Show Outgoing References"
                             Command="{Binding ShowOutgoingReferencesCommand}"
-                            CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
+                            CommandParameter="{Binding ObjectReferences.SelectedReference}" />
                   <MenuItem Header="Show Incoming References"
                             Command="{Binding ShowIncomingReferencesCommand}"
-                            CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
+                            CommandParameter="{Binding ObjectReferences.SelectedReference}" />
                   <MenuItem Header="Show Path to Root"
                             Command="{Binding ShowPathToRootCommand}"
-                            CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
+                            CommandParameter="{Binding ObjectReferences.SelectedReference}" />
                 </ContextMenu>
-              </ListBox.ContextMenu>
-              <ListBox.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <VirtualizingStackPanel />
-                </ItemsPanelTemplate>
-              </ListBox.ItemsPanel>
-              <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="objects:ObjectReferenceRowViewModel">
-                  <Grid ColumnDefinitions="*,120,140,*"
-                        ColumnSpacing="8"
-                        MinHeight="30">
-                    <TextBlock Grid.Column="0"
-                               Margin="8,0"
-                               VerticalAlignment="Center"
-                               TextTrimming="CharacterEllipsis"
-                               ToolTip.Tip="{Binding FieldDisplay}"
-                               Foreground="{DynamicResource AppTextPrimaryBrush}"
-                               Text="{Binding FieldDisplay}" />
-                    <TextBlock Grid.Column="1"
-                               VerticalAlignment="Center"
-                               Classes="secondary"
-                               Text="{Binding KindDisplay}" />
-                    <TextBlock Grid.Column="2"
-                               VerticalAlignment="Center"
-                               Classes="mono-data"
-                               Text="{Binding AddressDisplay}" />
-                    <TextBlock Grid.Column="3"
-                               Margin="0,0,8,0"
-                               VerticalAlignment="Center"
-                               Classes="secondary"
-                               TextTrimming="CharacterEllipsis"
-                               ToolTip.Tip="{Binding TypeNameDisplay}"
-                               Text="{Binding TypeNameDisplay}" />
-                  </Grid>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
+              </DataGrid.ContextMenu>
+              <DataGrid.Columns>
+                <DataGridTextColumn Header="Field" Width="*" SortMemberPath="FieldDisplay" Binding="{Binding FieldDisplay}" />
+                <DataGridTextColumn Header="Kind" Width="120" SortMemberPath="KindDisplay" Binding="{Binding KindDisplay}" />
+                <DataGridTextColumn Header="Address" Width="140" SortMemberPath="EndpointAddress" Binding="{Binding AddressDisplay}" />
+                <DataGridTextColumn Header="Type" Width="*" SortMemberPath="TypeNameDisplay" Binding="{Binding TypeNameDisplay}" />
+              </DataGrid.Columns>
+            </DataGrid>
           </Grid>
         </Grid>
       </Border>
@@ -808,17 +707,6 @@
             </StackPanel>
           </Grid>
 
-          <Grid Grid.Row="1"
-                IsVisible="{Binding GcRoots.ShowTable}"
-                ColumnDefinitions="*,120,140,*"
-                ColumnSpacing="8"
-                Background="{DynamicResource AppSurfaceSubtleBrush}">
-            <TextBlock Grid.Column="0" Classes="table-header" Text="Field" />
-            <TextBlock Grid.Column="1" Classes="table-header" Text="Kind" />
-            <TextBlock Grid.Column="2" Classes="table-header" Text="Address" />
-            <TextBlock Grid.Column="3" Classes="table-header" Text="Type" />
-          </Grid>
-
           <Grid Grid.Row="2">
             <StackPanel IsVisible="{Binding GcRoots.ShowIdle}"
                         HorizontalAlignment="Center"
@@ -833,6 +721,11 @@
             <StackPanel IsVisible="{Binding GcRoots.ShowLoading}"
                         Margin="0,8"
                         Spacing="10">
+              <Button Classes="dashboard-action"
+                      HorizontalAlignment="Left"
+                      AutomationProperties.Name="Cancel finding paths to root"
+                      Command="{Binding GcRoots.CancelCommand}"
+                      Content="Cancel" />
               <Grid ColumnDefinitions="*,120,140,*" ColumnSpacing="8">
                 <Border Grid.Column="0" Classes="skeleton" />
                 <Border Grid.Column="1" Classes="skeleton" />
@@ -871,70 +764,53 @@
                          Text="{Binding GcRoots.EmptyHint}" />
             </StackPanel>
 
-            <ListBox Classes="path-list"
-                     IsVisible="{Binding GcRoots.ShowTable}"
-                     AutomationProperties.Name="Paths to root"
-                     ItemsSource="{Binding GcRoots.Rows}"
-                     DoubleTapped="OnPathsListDoubleTapped">
-              <ListBox.ContextMenu>
+            <DataGrid IsVisible="{Binding GcRoots.ShowTable}"
+                      AutomationProperties.Name="Paths to root"
+                      AutoGenerateColumns="False"
+                      CanUserResizeColumns="True"
+                      CanUserSortColumns="True"
+                      IsReadOnly="True"
+                      GridLinesVisibility="Horizontal"
+                      ItemsSource="{Binding GcRoots.Rows}"
+                      SelectedItem="{Binding GcRoots.SelectedRow, Mode=TwoWay}"
+                      DoubleTapped="OnPathsListDoubleTapped">
+              <DataGrid.ContextMenu>
                 <ContextMenu>
+                  <MenuItem Header="Copy Object Address"
+                            Command="{Binding CopyObjectAddressCommand}"
+                            CommandParameter="{Binding GcRoots.SelectedRow}" />
+                  <MenuItem Header="Copy Path to Root"
+                            Command="{Binding CopyGcRootPathCommand}"
+                            CommandParameter="{Binding GcRoots.SelectedRow}" />
+                  <Separator />
                   <MenuItem Header="Show Outgoing References"
                             Command="{Binding ShowOutgoingReferencesCommand}"
-                            CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
+                            CommandParameter="{Binding GcRoots.SelectedRow}" />
                   <MenuItem Header="Show Incoming References"
                             Command="{Binding ShowIncomingReferencesCommand}"
-                            CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
+                            CommandParameter="{Binding GcRoots.SelectedRow}" />
                   <MenuItem Header="Show Path to Root"
                             Command="{Binding ShowPathToRootCommand}"
-                            CommandParameter="{Binding $parent[ContextMenu].PlacementTarget.DataContext}" />
+                            CommandParameter="{Binding GcRoots.SelectedRow}" />
                 </ContextMenu>
-              </ListBox.ContextMenu>
-              <ListBox.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <VirtualizingStackPanel />
-                </ItemsPanelTemplate>
-              </ListBox.ItemsPanel>
-              <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="objects:GcRootRowViewModel">
-                  <Grid ColumnDefinitions="*,120,140,*"
-                        ColumnSpacing="8"
-                        MinHeight="30">
-                    <TextBlock Grid.Column="0"
-                               Margin="{Binding IndentMargin}"
-                               VerticalAlignment="Center"
-                               IsVisible="{Binding IsRoot}"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource AppTextPrimaryBrush}"
-                               TextTrimming="CharacterEllipsis"
-                               ToolTip.Tip="{Binding FieldDisplay}"
-                               Text="{Binding FieldDisplay}" />
-                    <TextBlock Grid.Column="0"
-                               Margin="{Binding IndentMargin}"
-                               VerticalAlignment="Center"
-                               IsVisible="{Binding IsRoot, Converter={x:Static BoolConverters.Not}}"
-                               Foreground="{DynamicResource AppTextPrimaryBrush}"
-                               TextTrimming="CharacterEllipsis"
-                               ToolTip.Tip="{Binding FieldDisplay}"
-                               Text="{Binding FieldDisplay}" />
-                    <TextBlock Grid.Column="1"
-                               VerticalAlignment="Center"
-                               Classes="secondary"
-                               Text="{Binding KindDisplay}" />
-                    <TextBlock Grid.Column="2"
-                               VerticalAlignment="Center"
-                               Classes="mono-data"
-                               Text="{Binding AddressDisplay}" />
-                    <TextBlock Grid.Column="3"
-                               Margin="0,0,8,0"
-                               VerticalAlignment="Center"
-                               Classes="secondary"
-                               TextTrimming="CharacterEllipsis"
-                               ToolTip.Tip="{Binding TypeNameDisplay}"
-                               Text="{Binding TypeNameDisplay}" />
-                  </Grid>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
+              </DataGrid.ContextMenu>
+              <DataGrid.Columns>
+                <DataGridTemplateColumn Header="Field" Width="*" SortMemberPath="FieldDisplay">
+                  <DataGridTemplateColumn.CellTemplate>
+                    <DataTemplate x:DataType="objects:GcRootRowViewModel">
+                      <TextBlock Margin="{Binding IndentMargin}"
+                                 VerticalAlignment="Center"
+                                 TextTrimming="CharacterEllipsis"
+                                 ToolTip.Tip="{Binding FieldDisplay}"
+                                 Text="{Binding FieldDisplay}" />
+                    </DataTemplate>
+                  </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Kind" Width="120" SortMemberPath="KindDisplay" Binding="{Binding KindDisplay}" />
+                <DataGridTextColumn Header="Address" Width="140" SortMemberPath="EndpointAddress" Binding="{Binding AddressDisplay}" />
+                <DataGridTextColumn Header="Type" Width="*" SortMemberPath="TypeNameDisplay" Binding="{Binding TypeNameDisplay}" />
+              </DataGrid.Columns>
+            </DataGrid>
           </Grid>
         </Grid>
       </Border>

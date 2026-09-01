@@ -28,6 +28,7 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
     private bool _isLoading;
     private int _loadVersion;
     private int _disposed;
+    private ObjectReferenceRowViewModel? _selectedReference;
 
     internal ObjectReferencesViewModel(
         IObjectReferenceService service,
@@ -48,6 +49,12 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
     }
 
     public ReadOnlyObservableCollection<ObjectReferenceRowViewModel> References => _referencesView;
+
+    public ObjectReferenceRowViewModel? SelectedReference
+    {
+        get => _selectedReference;
+        set => SetProperty(ref _selectedReference, value);
+    }
 
     public string ObjectTypeName => _objectTypeName;
 
@@ -146,6 +153,7 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
             // state, so a failed or pending load can never show stale results
             // or a summary that contradicts the inspected object.
             _references = [];
+            SelectedReference = null;
             _referencesView = new ReadOnlyObservableCollection<ObjectReferenceRowViewModel>(_references);
             OnPropertyChanged(nameof(References));
             OnPropertyChanged(nameof(ObjectTypeName));

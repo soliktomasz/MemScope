@@ -258,19 +258,6 @@
               </StackPanel>
             </Grid>
 
-            <Grid Grid.Row="1"
-                  Margin="8,0"
-                  ColumnDefinitions="100,65,80,105,105,95,*"
-                  ColumnSpacing="8">
-              <TextBlock Grid.Column="0" Classes="section-label" Text="TIME" />
-              <TextBlock Grid.Column="1" Classes="section-label" Text="GEN" />
-              <TextBlock Grid.Column="2" Classes="section-label" Text="PAUSE" />
-              <TextBlock Grid.Column="3" Classes="section-label" Text="HEAP BEFORE" />
-              <TextBlock Grid.Column="4" Classes="section-label" Text="HEAP AFTER" />
-              <TextBlock Grid.Column="5" Classes="section-label" Text="RECLAIMED" />
-              <TextBlock Grid.Column="6" Classes="section-label" Text="REASON" />
-            </Grid>
-
             <Grid Grid.Row="2">
               <Border IsVisible="{Binding GcTimeline.HasNoEvents}"
                       BorderBrush="{DynamicResource AppBorderBrush}"
@@ -308,35 +295,25 @@
                 </StackPanel>
               </Border>
 
-              <ListBox Classes="gc-events"
-                       IsVisible="{Binding GcTimeline.HasFilteredEvents}"
-                       AutomationProperties.Name="Garbage collection events"
-                       ItemsSource="{Binding GcTimeline.FilteredEvents}"
-                       SelectedItem="{Binding GcTimeline.SelectedEvent}">
-                <ListBox.ItemsPanel>
-                  <ItemsPanelTemplate>
-                    <VirtualizingStackPanel />
-                  </ItemsPanelTemplate>
-                </ListBox.ItemsPanel>
-                <ListBox.ItemTemplate>
-                  <DataTemplate x:DataType="gc:GcEventRowViewModel">
-                    <Grid ColumnDefinitions="100,65,80,105,105,95,*" ColumnSpacing="8">
-                      <TextBlock Grid.Column="0" Classes="mono-data" Text="{Binding TimeDisplay}" />
-                      <TextBlock Grid.Column="1" Classes="mono-data" Text="{Binding GenerationDisplay}" />
-                      <TextBlock Grid.Column="2" Classes="mono-data" Text="{Binding PauseDisplay}" />
-                      <TextBlock Grid.Column="3" Classes="mono-data" Text="{Binding HeapBeforeDisplay}" />
-                      <TextBlock Grid.Column="4" Classes="mono-data" Text="{Binding HeapAfterDisplay}" />
-                      <TextBlock Grid.Column="5"
-                                 Classes="mono-data"
-                                 Text="{Binding EffectivenessDisplay}" />
-                      <TextBlock Grid.Column="6"
-                                 Foreground="{DynamicResource AppTextPrimaryBrush}"
-                                 TextTrimming="CharacterEllipsis"
-                                 Text="{Binding Reason}" />
-                    </Grid>
-                  </DataTemplate>
-                </ListBox.ItemTemplate>
-              </ListBox>
+              <DataGrid IsVisible="{Binding GcTimeline.HasFilteredEvents}"
+                        AutomationProperties.Name="Garbage collection events"
+                        AutoGenerateColumns="False"
+                        CanUserResizeColumns="True"
+                        CanUserSortColumns="True"
+                        IsReadOnly="True"
+                        GridLinesVisibility="Horizontal"
+                        ItemsSource="{Binding GcTimeline.FilteredEvents}"
+                        SelectedItem="{Binding GcTimeline.SelectedEvent}">
+                <DataGrid.Columns>
+                  <DataGridTextColumn Header="Time" Width="100" SortMemberPath="Timestamp" Binding="{Binding TimeDisplay}" />
+                  <DataGridTextColumn Header="Gen" Width="65" SortMemberPath="Generation" Binding="{Binding GenerationDisplay}" />
+                  <DataGridTextColumn Header="Pause" Width="80" SortMemberPath="PauseMilliseconds" Binding="{Binding PauseDisplay}" />
+                  <DataGridTextColumn Header="Heap before" Width="105" SortMemberPath="HeapSizeBefore" Binding="{Binding HeapBeforeDisplay}" />
+                  <DataGridTextColumn Header="Heap after" Width="105" SortMemberPath="HeapSizeAfter" Binding="{Binding HeapAfterDisplay}" />
+                  <DataGridTextColumn Header="Reclaimed" Width="95" SortMemberPath="ReclaimedBytes" Binding="{Binding EffectivenessDisplay}" />
+                  <DataGridTextColumn Header="Reason" Width="*" SortMemberPath="Reason" Binding="{Binding Reason}" />
+                </DataGrid.Columns>
+              </DataGrid>
             </Grid>
           </Grid>
 
