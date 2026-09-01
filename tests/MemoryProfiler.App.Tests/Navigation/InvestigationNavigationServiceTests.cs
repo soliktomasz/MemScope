@@ -1,9 +1,12 @@
+using System.Runtime.CompilerServices;
 using MemoryProfiler.App.Navigation;
 using MemoryProfiler.App.Models;
+using MemoryProfiler.TestInfrastructure;
 using Xunit;
 
 namespace MemoryProfiler.App.Tests.Navigation;
 
+[Collection("Profiler memory")]
 public sealed class InvestigationNavigationServiceTests
 {
     [Fact]
@@ -91,5 +94,59 @@ public sealed class InvestigationNavigationServiceTests
         Assert.Equal(new TypesLocation(), navigation.CurrentLocation);
         Assert.False(navigation.CanGoBack);
         Assert.False(navigation.CanGoForward);
+    }
+
+    [Fact]
+    public void RepeatedNavigationReleasesResetHistoryAndKeepsMemoryBounded()
+    {
+        var navigation = new InvestigationNavigationService();
+        navigation.Reset(new TypesLocation());
+        var before = ProfilerMemoryProbe.MeasureRetainedBytes();
+
+        var references = ExerciseNavigation(navigation, locationCount: 20_000);
+        var peak = GC.GetTotalMemory(forceFullCollection: false);
+        var after = ProfilerMemoryProbe.MeasureRetainedBytes();
+
+        Assert.Equal(new TypesLocation(), navigation.CurrentLocation);
+        Assert.False(navigation.CanGoBack);
+        Assert.False(navigation.CanGoForward);
+        Assert.InRange(references.Count(reference => reference.IsAlive), 0, 1);
+        Assert.True(
+            ProfilerMemoryProbe.IsGrowthWithin(
+                before,
+                after,
+                peak,
+                fixedAllowanceBytes: 8 * 1024 * 1024),
+            $"Retained navigation memory grew by {after - before:N0} bytes.");
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static IReadOnlyList<WeakReference> ExerciseNavigation(
+        InvestigationNavigationService navigation,
+        int locationCount)
+    {
+        var references = new List<WeakReference>(locationCount);
+        for (var index = 1; index <= locationCount; index++)
+        {
+            var location = new TypeLocation((ulong)index);
+            references.Add(new WeakReference(location));
+            navigation.Navigate(location);
+        }
+
+        while (navigation.CanGoBack)
+        {
+            navigation.GoBack();
+        }
+
+        Assert.Equal(new TypesLocation(), navigation.CurrentLocation);
+
+        while (navigation.CanGoForward)
+        {
+            navigation.GoForward();
+        }
+
+        Assert.Equal(new TypeLocation((ulong)locationCount), navigation.CurrentLocation);
+        navigation.Reset(new TypesLocation());
+        return references;
     }
 }

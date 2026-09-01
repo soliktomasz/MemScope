@@ -16,6 +16,13 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/MemoryProfiler.Analysis/MemoryProfiler.Analysis.csproj" />
+    <ProjectReference Include="../MemoryProfiler.TestInfrastructure/MemoryProfiler.TestInfrastructure.csproj" />
     <ProjectReference Include="../MemoryProfiler.Diagnostics.Tests/LiveDiagnosticsTarget/LiveDiagnosticsTarget.csproj" />
+    <ProjectReference Include="../TestTargets/StableMemoryTarget/StableMemoryTarget.csproj" />
+    <ProjectReference Include="../TestTargets/GrowingMemoryTarget/GrowingMemoryTarget.csproj" />
+    <ProjectReference Include="../TestTargets/HighAllocationTarget/HighAllocationTarget.csproj" />
+    <ProjectReference Include="../TestTargets/LargeObjectHeapTarget/LargeObjectHeapTarget.csproj" />
+    <ProjectReference Include="../TestTargets/GcPressureTarget/GcPressureTarget.csproj" />
+    <ProjectReference Include="../TestTargets/RootedObjectTarget/RootedObjectTarget.csproj" />
   </ItemGroup>
 </Project>

@@ -16,5 +16,6 @@
   <ItemGroup>
     <ProjectReference Include="../../src/MemoryProfiler.App/MemoryProfiler.App.csproj" />
     <ProjectReference Include="../../src/MemoryProfiler.Diagnostics/MemoryProfiler.Diagnostics.csproj" />
+    <ProjectReference Include="../MemoryProfiler.TestInfrastructure/MemoryProfiler.TestInfrastructure.csproj" />
   </ItemGroup>
 </Project>
