@@ -20,6 +20,9 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/MemoryProfiler.Diagnostics/MemoryProfiler.Diagnostics.csproj" />
+    <ProjectReference Include="../MemoryProfiler.TestInfrastructure/MemoryProfiler.TestInfrastructure.csproj" />
     <ProjectReference Include="LiveDiagnosticsTarget/LiveDiagnosticsTarget.csproj" />
+    <ProjectReference Include="../TestTargets/HighAllocationTarget/HighAllocationTarget.csproj" />
+    <ProjectReference Include="../TestTargets/GcPressureTarget/GcPressureTarget.csproj" />
   </ItemGroup>
 </Project>
