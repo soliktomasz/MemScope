@@ -204,6 +204,7 @@ public sealed class ObjectInstancesViewModel : ViewModelBase, IAsyncDisposable
             SetError(null);
             _isLoading = false;
             _instances = [];
+            SelectedInstance = null;
             _instancesView = new ReadOnlyObservableCollection<HeapObjectRowViewModel>(_instances);
             _totalSize = 0;
             OnPropertyChanged(nameof(Instances));

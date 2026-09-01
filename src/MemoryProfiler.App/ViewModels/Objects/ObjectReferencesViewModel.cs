@@ -252,6 +252,7 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
             SetError(null);
             _isLoading = false;
             _references = [];
+            SelectedReference = null;
             _referencesView = new ReadOnlyObservableCollection<ObjectReferenceRowViewModel>(_references);
             OnPropertyChanged(nameof(References));
             OnPropertyChanged(nameof(ObjectTypeName));

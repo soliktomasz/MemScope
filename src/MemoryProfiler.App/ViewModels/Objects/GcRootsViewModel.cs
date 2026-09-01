@@ -229,6 +229,7 @@ public sealed class GcRootsViewModel : ViewModelBase, IAsyncDisposable
             _isLoading = false;
             _rootCount = 0;
             _rows = [];
+            SelectedRow = null;
             _rowsView = new ReadOnlyObservableCollection<GcRootRowViewModel>(_rows);
             OnPropertyChanged(nameof(Rows));
             OnPropertyChanged(nameof(ObjectTypeName));
