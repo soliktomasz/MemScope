@@ -249,6 +249,39 @@ public sealed class ObjectDetailsViewModelTests
         Assert.False(viewModel.Fields[0].IsTruncated);
     }
 
+    [Fact]
+    public async Task SensitiveValuesAreReleasedWhenThePaneClears()
+    {
+        var service = new ControllableValueService(_ => ObjectResult(
+            new HeapFieldValue("_key", "System.String", HeapValueKind.String,
+                new string('s', 256 * 1024), null, null, false, 256 * 1024, null)));
+        var viewModel = new ObjectDetailsViewModel(service, ImmediateUiDispatcher.Instance);
+        await using var _ = viewModel;
+
+        await viewModel.ShowAsync(Snapshot(), 0x2000, "MyApp.Cache", null, null);
+        var reference = CaptureRowReference(viewModel);
+
+        // Navigate to another object, then clear, so the first value has no
+        // surviving strong reference.
+        await viewModel.ShowAsync(Snapshot(), 0x3000, "MyApp.Other", null, null);
+        await viewModel.ClearAsync();
+        ForceFullCollection();
+
+        Assert.False(reference.IsAlive);
+        Assert.DoesNotContain("secret-sentinel", viewModel.ErrorMessage, StringComparison.Ordinal);
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static WeakReference CaptureRowReference(ObjectDetailsViewModel viewModel) =>
+        new(viewModel.Fields[0]);
+
+    private static void ForceFullCollection()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+    }
+
     private sealed class BlockingValueService : IHeapObjectValueService
     {
         private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Diagnostics.NETCore.Client;
+using MemoryProfiler.Analysis.Dominators;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.Values;
@@ -94,6 +95,16 @@ public sealed class ClrMdHeapObjectValueServiceAcceptanceTests
             Assert.Equal("[500]", page500.Fields[0].Name);
             Assert.Equal("[749]", page500.Fields[^1].Name);
             Assert.False(page500.HasMoreElements);
+
+            // The same snapshot reports the probe as a large retained owner, tying
+            // the decoded field values to the Top Retainers retained metric.
+            var dominators = await new DominatorTreeService()
+                .ComputeDominatorsAsync(snapshot, progress: null, timeout.Token);
+            var probeDominator = Assert.Single(
+                dominators.Dominators,
+                item => item.ObjectAddress == probe.Address);
+            Assert.True(probeDominator.RetainedSize >= 1_048_576);
+            Assert.True(probeDominator.RetainedObjectCount >= 32);
         }
         finally
         {

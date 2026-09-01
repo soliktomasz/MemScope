@@ -3,6 +3,7 @@ using MemoryProfiler.Analysis.Dominators;
 using MemoryProfiler.App.ViewModels;
 using MemoryProfiler.App.ViewModels.Retainers;
 using MemoryProfiler.Contracts.Heap;
+using MemoryProfiler.TestInfrastructure;
 using Xunit;
 
 namespace MemoryProfiler.App.Tests.ViewModels.Retainers;
@@ -134,6 +135,31 @@ public sealed class TopRetainersViewModelTests
 
         var row = Assert.Single(viewModel.Retainers);
         Assert.Equal("MyApp.CacheEntry199", row.TypeName);
+    }
+
+    [Fact]
+    public async Task OneMillionRetainersStayBoundedInTheMaterializedWindow()
+    {
+        var result = Result(1_000_000);
+        var viewModel = new TopRetainersViewModel(ImmediateUiDispatcher.Instance);
+        await using var _ = viewModel;
+        var before = ProfilerMemoryProbe.MeasureRetainedBytes();
+
+        await viewModel.SetResultAsync(result);
+
+        Assert.Equal(500, viewModel.Retainers.Count);
+        var after = ProfilerMemoryProbe.MeasureRetainedBytes();
+        Assert.True(
+            ProfilerMemoryProbe.IsGrowthWithin(
+                before,
+                after,
+                GC.GetTotalMemory(forceFullCollection: false),
+                fixedAllowanceBytes: 16 * 1024 * 1024),
+            $"Materialized Top Retainers rows grew by {after - before:N0} bytes.");
+
+        viewModel.SearchText = "cacheentry999999";
+        await viewModel.ApplySearchAsync();
+        Assert.Single(viewModel.Retainers);
     }
 
     private static DominatorAnalysisResult Result(int count)
