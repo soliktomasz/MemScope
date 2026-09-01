@@ -8,9 +8,17 @@ public sealed class MetricFormattingTests
 {
     [Theory]
     [InlineData(824UL, "824 B")]
+    [InlineData(1_024UL, "1 KB")]
     [InlineData(14_541UL, "14.2 KB")]
+    [InlineData(102_912UL, "100.5 KB")]
+    [InlineData(1_048_576UL, "1 MB")]
     [InlineData(51_065_651UL, "48.7 MB")]
+    [InlineData(105_381_888UL, "100.5 MB")]
+    [InlineData(1_073_741_824UL, "1 GB")]
     [InlineData(1_406_604_329UL, "1.31 GB")]
+    [InlineData(107_642_617_856UL, "100.25 GB")]
+    [InlineData(1_099_511_627_776UL, "1 TB")]
+    [InlineData(110_226_040_684_544UL, "100.25 TB")]
     public void BytesUsesCompactBinaryUnits(ulong value, string expected) =>
         Assert.Equal(expected, WithCulture(() => MetricFormatting.Bytes(value)));
 

@@ -128,6 +128,65 @@ public sealed class SnapshotViewModelTests
     }
 
     [Fact]
+    public async Task SupersededLoadCannotClearTheActiveLoadingState()
+    {
+        var firstStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstCancelled = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondCompletion = new TaskCompletionSource<HeapSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var loadCount = 0;
+        var loader = new StubSnapshotLoader(async cancellationToken =>
+        {
+            if (Interlocked.Increment(ref loadCount) == 1)
+            {
+                firstStarted.SetResult();
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    firstCancelled.SetResult();
+                    await releaseFirst.Task;
+                    throw;
+                }
+            }
+
+            secondStarted.SetResult();
+            return await secondCompletion.Task.WaitAsync(cancellationToken);
+        });
+        await using var viewModel = new SnapshotViewModel(
+            loader,
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            ImmediateUiDispatcher.Instance);
+
+        var firstLoad = viewModel.LoadAsync("first.dmp");
+        await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var secondLoad = viewModel.LoadAsync("second.dmp");
+        await secondStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await firstCancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        releaseFirst.SetResult();
+        await firstLoad;
+
+        Assert.True(viewModel.IsLoading);
+        Assert.True(viewModel.CancelLoadCommand.CanExecute(null));
+
+        secondCompletion.SetResult(Snapshot());
+        await secondLoad;
+
+        Assert.False(viewModel.IsLoading);
+    }
+
+    [Fact]
     public async Task CancelLoadCommandStopsLoadingWithoutReportingAnError()
     {
         var started = new TaskCompletionSource(

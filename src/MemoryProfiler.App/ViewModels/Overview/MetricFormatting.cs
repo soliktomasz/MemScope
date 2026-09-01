@@ -18,8 +18,8 @@ internal static class MetricFormatting
         var format = unitIndex switch
         {
             0 => "N0",
-            1 or 2 => amount >= 100 ? "N0" : "N1",
-            _ => amount >= 100 ? "N0" : amount >= 10 ? "N1" : "N2",
+            1 or 2 => "#,0.#",
+            _ => "#,0.##",
         };
         return $"{amount.ToString(format, CultureInfo.CurrentCulture)} {units[unitIndex]}";
     }

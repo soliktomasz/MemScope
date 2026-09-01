@@ -324,11 +324,16 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         }
         finally
         {
-            await PublishAsync(() => IsLoading = false).ConfigureAwait(false);
-            if (ReferenceEquals(_activeLoadCancellation, linked))
+            await PublishAsync(() =>
             {
+                if (!ReferenceEquals(_activeLoadCancellation, linked))
+                {
+                    return;
+                }
+
+                IsLoading = false;
                 _activeLoadCancellation = null;
-            }
+            }).ConfigureAwait(false);
         }
     }
 
@@ -537,7 +542,6 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
     private void CancelActiveLoad()
     {
         var cancellation = _activeLoadCancellation;
-        _activeLoadCancellation = null;
         if (cancellation is null)
         {
             return;
