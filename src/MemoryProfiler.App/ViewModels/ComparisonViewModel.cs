@@ -2,6 +2,7 @@ using System.Globalization;
 using MemoryProfiler.Analysis.Comparison;
 using MemoryProfiler.Analysis.Dominators;
 using MemoryProfiler.Analysis.Loading;
+using MemoryProfiler.App.Errors;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels.Comparison;
 using MemoryProfiler.Contracts.Heap;
@@ -30,7 +31,7 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
     private bool _isComputingRetainedSizes;
     private double _progress;
     private string _statusText = string.Empty;
-    private string? _errorMessage;
+    private ProfilerError? _error;
     private string? _retainedSizeNote;
     private bool _hasCompared;
     private int _disposed;
@@ -56,10 +57,10 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
         _close = close;
         _comparisonCompleted = comparisonCompleted;
         _closeCommand = new AsyncCommand(close ?? (() => Task.CompletedTask));
-        _pickBeforeCommand = new AsyncCommand(PickBeforeAsync);
-        _pickAfterCommand = new AsyncCommand(PickAfterAsync);
+        _pickBeforeCommand = new AsyncCommand(() => PickBeforeAsync());
+        _pickAfterCommand = new AsyncCommand(() => PickAfterAsync());
         _compareCommand = new AsyncCommand(
-            CompareAsync,
+            () => CompareAsync(),
             () => HasBefore && HasAfter && !IsLoading);
         Table.PropertyChanged += OnTablePropertyChanged;
     }
@@ -135,9 +136,11 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
         }
     }
 
-    public string ErrorMessage => _errorMessage ?? string.Empty;
+    public ProfilerError? Error => _error;
 
-    public bool HasError => _errorMessage is not null;
+    public string ErrorMessage => Error?.Message ?? string.Empty;
+
+    public bool HasError => Error is not null;
 
     public bool ShowError => HasError;
 
@@ -155,23 +158,28 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
 
     public bool ShowNoFilteredDeltas => HasCompared && Table.HasNoFilteredDeltas;
 
-    public async Task PickBeforeAsync()
+    public async Task PickBeforeAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         await PickPathAsync(
             pick: () => _filePicker.PickAsync(),
-            setPath: path => BeforePath = path);
+            setPath: path => BeforePath = path,
+            cancellationToken: cancellationToken);
     }
 
-    public async Task PickAfterAsync()
+    public async Task PickAfterAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         await PickPathAsync(
             pick: () => _filePicker.PickAsync(),
-            setPath: path => AfterPath = path);
+            setPath: path => AfterPath = path,
+            cancellationToken: cancellationToken);
     }
 
-    public async Task LoadAsync(string beforePath, string afterPath)
+    public async Task LoadAsync(
+        string beforePath,
+        string afterPath,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(beforePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(afterPath);
@@ -181,10 +189,10 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
             BeforePath = beforePath;
             AfterPath = afterPath;
         }).ConfigureAwait(false);
-        await CompareAsync().ConfigureAwait(false);
+        await CompareAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task CompareAsync()
+    public async Task CompareAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         var beforePath = _beforePath;
@@ -209,7 +217,8 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
             // CompareAsync; the composition and cleanup are unchanged.
             linked = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellation.Token,
-                _disposeCancellation.Token);
+                _disposeCancellation.Token,
+                cancellationToken);
             token = linked.Token;
             await PublishAsync(() =>
             {
@@ -276,6 +285,13 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
                     .ConfigureAwait(false);
             }
         }
+        catch (OperationCanceledException exception)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            await PublishAsync(() => SetError(ProfilerErrorFactory.Create(
+                ProfilerOperation.CompareSnapshots,
+                exception))).ConfigureAwait(false);
+        }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             // A newer comparison or the view closure superseded this one.
@@ -289,7 +305,9 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
                     return;
                 }
 
-                SetError($"Unable to compare snapshots. {exception.Message}");
+                SetError(ProfilerErrorFactory.Create(
+                    ProfilerOperation.CompareSnapshots,
+                    exception));
             }).ConfigureAwait(false);
         }
         finally
@@ -400,7 +418,7 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
         {
             throw;
         }
-        catch (Exception exception)
+        catch (Exception)
         {
             // The failure is non-fatal: the comparison completes without
             // retained deltas (the column shows N/A) with a quiet note.
@@ -411,7 +429,7 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
                     return;
                 }
 
-                _retainedSizeNote = $"Retained sizes unavailable. {exception.Message}";
+                _retainedSizeNote = "Retained sizes unavailable.";
                 OnPropertyChanged(nameof(RetainedSizeNote));
                 OnPropertyChanged(nameof(HasRetainedSizeNote));
             }).ConfigureAwait(false);
@@ -434,17 +452,24 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
 
     private async Task PickPathAsync(
         Func<Task<string?>> pick,
-        Action<string> setPath)
+        Action<string> setPath,
+        CancellationToken cancellationToken)
     {
         string? path;
         try
         {
-            path = await pick();
+            path = await pick().WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
         }
         catch (Exception exception)
         {
             await PublishAsync(() =>
-                SetError($"Unable to open the dump picker. {exception.Message}")).ConfigureAwait(false);
+                SetError(ProfilerErrorFactory.Create(
+                    ProfilerOperation.ChooseFile,
+                    exception))).ConfigureAwait(false);
             return;
         }
 
@@ -459,7 +484,7 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
         // comparison immediately; the Compare button re-runs or retries.
         if (HasBefore && HasAfter)
         {
-            _ = CompareAsync();
+            _ = CompareAsync(cancellationToken);
         }
     }
 
@@ -547,10 +572,11 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
         }).ConfigureAwait(false);
     }
 
-    private void SetError(string? message)
+    private void SetError(ProfilerError? error)
     {
-        if (SetProperty(ref _errorMessage, message, nameof(ErrorMessage)))
+        if (SetProperty(ref _error, error, nameof(Error)))
         {
+            OnPropertyChanged(nameof(ErrorMessage));
             OnPropertyChanged(nameof(HasError));
             NotifyDisplayStateChanged();
         }

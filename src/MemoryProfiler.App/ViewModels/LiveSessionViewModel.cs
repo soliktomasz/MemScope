@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
 using MemoryProfiler.App.Services;
+using MemoryProfiler.App.Errors;
 using MemoryProfiler.App.ViewModels.Overview;
 using MemoryProfiler.App.ViewModels.GcTimeline;
 using MemoryProfiler.Contracts.Live;
@@ -39,10 +40,10 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
     private bool _isLive;
     private bool _isDisconnected;
     private bool _hasMetrics;
-    private string? _errorMessage;
+    private ProfilerError? _error;
     private bool _isCapturing;
     private string _captureStatusMessage = string.Empty;
-    private string _captureErrorMessage = string.Empty;
+    private ProfilerError? _captureError;
     private string _capturedDumpPath = string.Empty;
     private int _disposed;
 
@@ -93,10 +94,10 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
             closeSession ?? DisconnectAsync,
             () => IsDisconnected || HasError);
         _captureSnapshotCommand = new AsyncCommand(
-            CaptureSnapshotAsync,
+            () => CaptureSnapshotAsync(),
             () => CanCaptureSnapshot);
         _analyzeSnapshotCommand = new AsyncCommand(
-            AnalyzeSnapshotAsync,
+            () => AnalyzeSnapshotAsync(),
             () => CanAnalyzeSnapshot);
         _cancelCaptureCommand = new RelayCommand(CancelCapture, () => IsCapturing);
     }
@@ -168,19 +169,22 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         }
     }
 
-    public bool HasCaptureError => CaptureErrorMessage.Length > 0;
+    public bool HasCaptureError => CaptureError is not null;
 
-    public string CaptureErrorMessage
+    public ProfilerError? CaptureError
     {
-        get => _captureErrorMessage;
+        get => _captureError;
         private set
         {
-            if (SetProperty(ref _captureErrorMessage, value))
+            if (SetProperty(ref _captureError, value))
             {
+                OnPropertyChanged(nameof(CaptureErrorMessage));
                 OnPropertyChanged(nameof(HasCaptureError));
             }
         }
     }
+
+    public string CaptureErrorMessage => CaptureError?.Message ?? string.Empty;
 
     public string CapturedDumpPath
     {
@@ -227,11 +231,13 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
 
     public bool IsAwaitingMetrics => IsLive && !HasMetrics;
 
-    public bool HasError => _errorMessage is not null;
+    public ProfilerError? Error => _error;
 
-    public string ErrorMessage => _errorMessage ?? string.Empty;
+    public bool HasError => Error is not null;
 
-    public Task StartAsync()
+    public string ErrorMessage => Error?.Message ?? string.Empty;
+
+    public Task StartAsync(CancellationToken cancellationToken = default)
     {
         lock (_lifecycleGate)
         {
@@ -244,15 +250,18 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
             IsConnecting = true;
             IsDisconnected = false;
             SetError(null);
-            _runTask = RunAsync();
+            _runTask = RunAsync(cancellationToken);
             return _runTask;
         }
     }
 
-    private async Task RunAsync()
+    private async Task RunAsync(CancellationToken externalCancellationToken)
     {
         var connected = false;
-        var cancellationToken = _sessionCancellation.Token;
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            externalCancellationToken,
+            _sessionCancellation.Token);
+        var cancellationToken = linked.Token;
         try
         {
             var session = await _sessionFactory
@@ -261,7 +270,6 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
             _session = session;
             cancellationToken.ThrowIfCancellationRequested();
             connected = true;
-
             await PublishAsync(() =>
             {
                 IsConnecting = false;
@@ -283,9 +291,10 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
             await PublishAsync(() =>
             {
                 SetDisconnected();
-                SetError(connected
-                    ? $"The live diagnostics session ended unexpectedly. {exception.Message}"
-                    : $"Unable to start live diagnostics. {exception.Message}");
+                SetError(ProfilerErrorFactory.Create(
+                    connected ? ProfilerOperation.ObserveSession : ProfilerOperation.Attach,
+                    exception,
+                    ProcessId));
             }).ConfigureAwait(false);
         }
         finally
@@ -362,7 +371,7 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         }
     }
 
-    public async Task CaptureSnapshotAsync()
+    public async Task CaptureSnapshotAsync(CancellationToken cancellationToken = default)
     {
         if (Volatile.Read(ref _disposed) != 0 ||
             !IsLive ||
@@ -375,7 +384,13 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         string? destinationDirectory;
         try
         {
-            destinationDirectory = await _dumpDestinationPicker.PickAsync();
+            destinationDirectory = await _dumpDestinationPicker
+                .PickAsync()
+                .WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
         }
         catch (Exception exception)
         {
@@ -383,7 +398,10 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
             {
                 CapturedDumpPath = string.Empty;
                 CaptureStatusMessage = string.Empty;
-                CaptureErrorMessage = $"Unable to choose a snapshot destination. {exception.Message}";
+                CaptureError = ProfilerErrorFactory.Create(
+                    ProfilerOperation.CaptureDump,
+                    exception,
+                    ProcessId);
             }).ConfigureAwait(false);
             return;
         }
@@ -404,7 +422,9 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
                 return;
             }
 
-            captureCancellation = new CancellationTokenSource();
+            captureCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                _sessionCancellation.Token);
             _captureCancellation = captureCancellation;
             captureTask = CaptureCoreAsync(
                 destinationDirectory,
@@ -442,7 +462,7 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         RequestCancellation(cancellation);
     }
 
-    public async Task AnalyzeSnapshotAsync()
+    public async Task AnalyzeSnapshotAsync(CancellationToken cancellationToken = default)
     {
         if (Volatile.Read(ref _disposed) != 0 ||
             !CanAnalyzeSnapshot ||
@@ -452,17 +472,30 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         }
 
         var path = CapturedDumpPath;
-        await PublishAsync(() => CaptureErrorMessage = string.Empty).ConfigureAwait(false);
+        await PublishAsync(() => CaptureError = null).ConfigureAwait(false);
         try
         {
-            await _analyzeSnapshot(path);
+            await _analyzeSnapshot(path).WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException exception)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            await PublishAsync(() =>
+            {
+                CaptureError = ProfilerErrorFactory.Create(
+                    ProfilerOperation.AnalyzeSnapshot,
+                    exception,
+                    ProcessId);
+            }).ConfigureAwait(false);
         }
         catch (Exception exception)
         {
             await PublishAsync(() =>
             {
-                CaptureErrorMessage =
-                    $"Unable to open the snapshot. {exception.Message}";
+                CaptureError = ProfilerErrorFactory.Create(
+                    ProfilerOperation.AnalyzeSnapshot,
+                    exception,
+                    ProcessId);
             }).ConfigureAwait(false);
         }
     }
@@ -510,7 +543,7 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         await PublishAsync(() =>
         {
             CapturedDumpPath = string.Empty;
-            CaptureErrorMessage = string.Empty;
+            CaptureError = null;
             CaptureStatusMessage = "Capturing snapshot";
             IsCapturing = true;
         }).ConfigureAwait(false);
@@ -537,7 +570,10 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
             await PublishAsync(() =>
             {
                 CaptureStatusMessage = string.Empty;
-                CaptureErrorMessage = $"Unable to capture snapshot. {exception.Message}";
+                CaptureError = ProfilerErrorFactory.Create(
+                    ProfilerOperation.CaptureDump,
+                    exception,
+                    ProcessId);
             }).ConfigureAwait(false);
         }
         finally
@@ -634,10 +670,11 @@ public sealed class LiveSessionViewModel : ViewModelBase, IAsyncDisposable
         }
     }
 
-    private void SetError(string? message)
+    private void SetError(ProfilerError? error)
     {
-        if (SetProperty(ref _errorMessage, message, nameof(ErrorMessage)))
+        if (SetProperty(ref _error, error, nameof(Error)))
         {
+            OnPropertyChanged(nameof(ErrorMessage));
             OnPropertyChanged(nameof(HasError));
             _closeCommand.NotifyCanExecuteChanged();
         }

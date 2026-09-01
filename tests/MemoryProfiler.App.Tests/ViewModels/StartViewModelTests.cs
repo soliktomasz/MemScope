@@ -6,6 +6,7 @@ using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
 using MemoryProfiler.Analysis.Roots;
+using MemoryProfiler.App.Errors;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels;
 using MemoryProfiler.Contracts.Heap;
@@ -145,7 +146,9 @@ public sealed class StartViewModelTests
         await picker.RefreshAsync();
 
         Assert.True(picker.HasError);
-        Assert.Contains("Diagnostics service unavailable.", picker.ErrorMessage);
+        Assert.Equal(ProfilerErrorKind.Unexpected, picker.Error!.Kind);
+        Assert.DoesNotContain("Diagnostics service unavailable.", picker.ErrorMessage);
+        Assert.Contains("Diagnostics service unavailable.", picker.Error.TechnicalDetails);
         Assert.True(picker.RefreshCommand.CanExecute(null));
         Assert.Empty(picker.Processes);
     }
@@ -576,7 +579,7 @@ public sealed class StartViewModelTests
         await start.OpenDumpAsync();
 
         Assert.True(start.HasDumpError);
-        Assert.Contains("Picker unavailable.", start.DumpErrorMessage);
+        Assert.Contains("Picker unavailable.", start.DumpError!.TechnicalDetails);
         Assert.True(start.IsStartVisible);
         Assert.Null(start.Snapshot);
     }
@@ -603,7 +606,7 @@ public sealed class StartViewModelTests
 
         Assert.True(start.IsSnapshotVisible);
         Assert.True(start.Snapshot!.HasError);
-        Assert.Contains("Not a dump.", start.Snapshot.ErrorMessage);
+        Assert.Contains("Not a dump.", start.Snapshot.Error!.TechnicalDetails);
 
         await start.CloseSnapshotAsync();
 
@@ -762,7 +765,9 @@ public sealed class StartViewModelTests
 
         Assert.True(start.Snapshot!.HasSnapshot);
         Assert.True(start.HasSessionHistoryError);
-        Assert.Contains("History directory is read-only.", start.SessionHistoryErrorMessage);
+        Assert.Contains(
+            "History directory is read-only.",
+            start.SessionHistoryError!.TechnicalDetails);
     }
 
     [Fact]

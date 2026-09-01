@@ -238,8 +238,8 @@ public sealed class GcRootsViewModelTests
         Assert.True(viewModel.HasError);
         Assert.True(viewModel.ShowError);
         Assert.False(viewModel.ShowTable);
-        Assert.Contains("The dump has no CLR runtime.", viewModel.ErrorMessage);
-        Assert.StartsWith("Unable to find paths to root.", viewModel.ErrorMessage);
+        Assert.Contains("The dump has no CLR runtime.", viewModel.Error!.TechnicalDetails);
+        Assert.Equal("CLR runtime not found", viewModel.Error.Title);
     }
 
     [Fact]

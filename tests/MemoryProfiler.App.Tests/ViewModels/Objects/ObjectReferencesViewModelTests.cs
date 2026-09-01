@@ -172,8 +172,8 @@ public sealed class ObjectReferencesViewModelTests
         Assert.True(viewModel.HasError);
         Assert.True(viewModel.ShowError);
         Assert.False(viewModel.ShowTable);
-        Assert.Contains("The dump is corrupt.", viewModel.ErrorMessage);
-        Assert.StartsWith("Unable to load references.", viewModel.ErrorMessage);
+        Assert.Contains("The dump is corrupt.", viewModel.Error!.TechnicalDetails);
+        Assert.Equal("Dump corrupted", viewModel.Error.Title);
     }
 
     [Fact]

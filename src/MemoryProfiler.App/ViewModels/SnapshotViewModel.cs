@@ -6,6 +6,7 @@ using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
 using MemoryProfiler.Analysis.Roots;
 using MemoryProfiler.App.Models;
+using MemoryProfiler.App.Errors;
 using MemoryProfiler.App.Navigation;
 using MemoryProfiler.App.ViewModels.Objects;
 using MemoryProfiler.App.ViewModels.Overview;
@@ -28,7 +29,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
     private readonly RelayCommand _goBackCommand;
     private readonly RelayCommand _goForwardCommand;
     private HeapSnapshot? _snapshot;
-    private string? _errorMessage;
+    private ProfilerError? _error;
     private bool _isLoading;
     private CancellationTokenSource? _retainedSizeCancellation;
     private int _retainedSizeVersion;
@@ -122,9 +123,11 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
 
     public bool IsReady => HasSnapshot && !IsLoading;
 
-    public string ErrorMessage => _errorMessage ?? string.Empty;
+    public ProfilerError? Error => _error;
 
-    public bool HasError => _errorMessage is not null;
+    public string ErrorMessage => Error?.Message ?? string.Empty;
+
+    public bool HasError => Error is not null;
 
     public bool ShowLoading => IsLoading;
 
@@ -264,6 +267,13 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
                 _ = ComputeRetainedSizesAsync(snapshot);
             }
         }
+        catch (OperationCanceledException exception)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            await PublishAsync(() => SetError(ProfilerErrorFactory.Create(
+                ProfilerOperation.OpenSnapshot,
+                exception))).ConfigureAwait(false);
+        }
         catch (OperationCanceledException) when (linked.Token.IsCancellationRequested)
         {
             // Cancellation is expected when the user closes the snapshot during analysis.
@@ -271,7 +281,9 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         catch (Exception exception)
         {
             await PublishAsync(() =>
-                SetError($"Unable to open the snapshot. {exception.Message}")).ConfigureAwait(false);
+                SetError(ProfilerErrorFactory.Create(
+                    ProfilerOperation.OpenSnapshot,
+                    exception))).ConfigureAwait(false);
         }
         finally
         {
@@ -384,7 +396,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         {
             // A new snapshot or snapshot closure superseded the computation.
         }
-        catch (Exception exception)
+        catch (Exception)
         {
             await PublishAsync(() =>
             {
@@ -395,7 +407,7 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
 
                 // The failure is non-fatal: the snapshot and type browser stay
                 // fully usable, only the retained column stays unavailable.
-                _retainedSizeStatusText = $"Retained sizes unavailable. {exception.Message}";
+                _retainedSizeStatusText = "Retained sizes unavailable.";
                 _isComputingRetainedSizes = false;
                 OnPropertyChanged(nameof(RetainedSizeStatusText));
                 OnPropertyChanged(nameof(IsComputingRetainedSizes));
@@ -697,10 +709,11 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
         }).ConfigureAwait(false);
     }
 
-    private void SetError(string? message)
+    private void SetError(ProfilerError? error)
     {
-        if (SetProperty(ref _errorMessage, message, nameof(ErrorMessage)))
+        if (SetProperty(ref _error, error, nameof(Error)))
         {
+            OnPropertyChanged(nameof(ErrorMessage));
             OnPropertyChanged(nameof(HasError));
             NotifyDisplayStateChanged();
         }

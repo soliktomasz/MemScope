@@ -120,8 +120,8 @@ public sealed class ObjectInstancesViewModelTests
         Assert.True(viewModel.HasError);
         Assert.True(viewModel.ShowError);
         Assert.False(viewModel.ShowTable);
-        Assert.Contains("The dump is corrupt.", viewModel.ErrorMessage);
-        Assert.StartsWith("Unable to load instances.", viewModel.ErrorMessage);
+        Assert.Contains("The dump is corrupt.", viewModel.Error!.TechnicalDetails);
+        Assert.Equal("Dump corrupted", viewModel.Error.Title);
     }
 
     [Fact]
@@ -190,7 +190,7 @@ public sealed class ObjectInstancesViewModelTests
         gates[0x1000].SetResult(
             [Instance(0x1000, "MyApp.First", 64, "Gen0")]);
         await first;
-        Assert.Equal(1, viewModel.Instances.Count);
+        Assert.Single(viewModel.Instances);
 
         var second = viewModel.ShowAsync(Snapshot(), Type(0x2000, "MyApp.Second"));
 

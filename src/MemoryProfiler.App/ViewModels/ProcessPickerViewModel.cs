@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
+using MemoryProfiler.App.Errors;
 using MemoryProfiler.Contracts.Processes;
 using MemoryProfiler.Diagnostics.Processes;
 
@@ -28,7 +29,7 @@ public sealed class ProcessPickerViewModel : ViewModelBase, IDisposable
     private readonly RelayCommand _sortByRuntimeCommand;
     private readonly RefreshCoordinator _refreshCoordinator = new();
     private bool _isLoading;
-    private string? _errorMessage;
+    private ProfilerError? _error;
     private ProcessRowViewModel? _selectedProcess;
     private ProcessSortColumn _sortColumn = ProcessSortColumn.ProcessId;
     private ProcessSortDirection _sortDirection = ProcessSortDirection.Ascending;
@@ -77,9 +78,11 @@ public sealed class ProcessPickerViewModel : ViewModelBase, IDisposable
         }
     }
 
-    public string ErrorMessage => _errorMessage ?? string.Empty;
+    public ProfilerError? Error => _error;
 
-    public bool HasError => _errorMessage is not null;
+    public string ErrorMessage => Error?.Message ?? string.Empty;
+
+    public bool HasError => Error is not null;
 
     public bool HasProcesses => _processes.Count > 0;
 
@@ -140,7 +143,9 @@ public sealed class ProcessPickerViewModel : ViewModelBase, IDisposable
         catch (Exception exception)
         {
             await refresh.TryRunIfCurrentAsync(
-                () => SetError($"Unable to discover .NET processes. {exception.Message}"));
+                () => SetError(ProfilerErrorFactory.Create(
+                    ProfilerOperation.DiscoverProcesses,
+                    exception)));
         }
         finally
         {
@@ -244,13 +249,14 @@ public sealed class ProcessPickerViewModel : ViewModelBase, IDisposable
                 .ThenBy(process => process.ProcessId);
     }
 
-    private void SetError(string? message)
+    private void SetError(ProfilerError? error)
     {
-        if (!SetProperty(ref _errorMessage, message, nameof(ErrorMessage)))
+        if (!SetProperty(ref _error, error, nameof(Error)))
         {
             return;
         }
 
+        OnPropertyChanged(nameof(ErrorMessage));
         OnPropertyChanged(nameof(HasError));
         OnPropertyChanged(nameof(IsEmpty));
     }

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.References;
+using MemoryProfiler.App.Errors;
 using MemoryProfiler.App.Models;
 using MemoryProfiler.Contracts.Heap;
 
@@ -21,7 +22,7 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
     private string _objectTypeName = string.Empty;
     private ulong _objectAddress;
     private ReferenceDirection _direction;
-    private string? _errorMessage;
+    private ProfilerError? _error;
     private bool _isLoading;
     private int _loadVersion;
     private int _disposed;
@@ -75,9 +76,11 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
 
     public bool IsLoading => _isLoading;
 
-    public string ErrorMessage => _errorMessage ?? string.Empty;
+    public ProfilerError? Error => _error;
 
-    public bool HasError => _errorMessage is not null;
+    public string ErrorMessage => Error?.Message ?? string.Empty;
+
+    public bool HasError => Error is not null;
 
     public bool ShowIdle => !HasSelection && !IsLoading && !HasError;
 
@@ -199,7 +202,9 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
                     return;
                 }
 
-                SetError($"Unable to load references. {exception.Message}");
+                SetError(ProfilerErrorFactory.Create(
+                    ProfilerOperation.AnalyzeSnapshot,
+                    exception));
                 _isLoading = false;
                 NotifyDisplayStateChanged();
             }).ConfigureAwait(false);
@@ -231,7 +236,7 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
             _snapshot = null;
             _objectTypeName = string.Empty;
             _objectAddress = 0;
-            _errorMessage = null;
+            SetError(null);
             _isLoading = false;
             _references = [];
             _referencesView = new ReadOnlyObservableCollection<ObjectReferenceRowViewModel>(_references);
@@ -359,14 +364,15 @@ public sealed class ObjectReferencesViewModel : ViewModelBase, IAsyncDisposable
         }).ConfigureAwait(false);
     }
 
-    private void SetError(string? message)
+    private void SetError(ProfilerError? error)
     {
-        if (message == _errorMessage)
+        if (error == _error)
         {
             return;
         }
 
-        _errorMessage = message;
+        _error = error;
+        OnPropertyChanged(nameof(Error));
         OnPropertyChanged(nameof(ErrorMessage));
         OnPropertyChanged(nameof(HasError));
     }

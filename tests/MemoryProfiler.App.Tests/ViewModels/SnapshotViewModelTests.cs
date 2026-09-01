@@ -4,6 +4,7 @@ using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
 using MemoryProfiler.Analysis.Roots;
+using MemoryProfiler.App.Errors;
 using MemoryProfiler.App.Models;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.ViewModels.Objects;
@@ -115,12 +116,13 @@ public sealed class SnapshotViewModelTests
         Assert.False(viewModel.HasSnapshot);
         Assert.True(viewModel.HasError);
         Assert.True(viewModel.ShowError);
-        Assert.Contains("The dump has no CLR runtime.", viewModel.ErrorMessage);
-        Assert.StartsWith("Unable to open the snapshot.", viewModel.ErrorMessage);
+        Assert.Equal(ProfilerErrorKind.ClrRuntimeNotFound, viewModel.Error!.Kind);
+        Assert.DoesNotContain("The dump has no CLR runtime.", viewModel.ErrorMessage);
+        Assert.Contains("The dump has no CLR runtime.", viewModel.Error.TechnicalDetails);
     }
 
     [Fact]
-    public async Task CancellationClearsLoadingWithoutAnError()
+    public async Task RequestedCancellationReportsAnalysisCancelled()
     {
         var started = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
@@ -146,7 +148,8 @@ public sealed class SnapshotViewModelTests
         await load;
 
         Assert.False(viewModel.IsLoading);
-        Assert.False(viewModel.HasError);
+        Assert.True(viewModel.HasError);
+        Assert.Equal(ProfilerErrorKind.AnalysisCancelled, viewModel.Error!.Kind);
         Assert.False(viewModel.HasSnapshot);
     }
 
