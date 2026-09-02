@@ -1,18 +1,15 @@
-using System.Diagnostics;
 using Microsoft.Diagnostics.NETCore.Client;
-using Microsoft.Diagnostics.Runtime;
 using MemoryProfiler.Analysis.Dominators;
 using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.Values;
 using MemoryProfiler.Contracts.Heap;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace MemoryProfiler.Analysis.Tests.Values;
 
 [Collection("Live diagnostics")]
-public sealed class ClrMdHeapObjectValueServiceAcceptanceTests(ITestOutputHelper output)
+public sealed class ClrMdHeapObjectValueServiceAcceptanceTests
 {
     [Fact]
     public async Task CapturedDumpDecodesControlledCacheProbeFields()
@@ -46,21 +43,8 @@ public sealed class ClrMdHeapObjectValueServiceAcceptanceTests(ITestOutputHelper
             var service = new ClrMdHeapObjectValueService();
             var values = await service.ReadAsync(snapshot, probe.Address, new(), timeout.Token);
 
-            // TEMPORARY CI DIAGNOSTICS: per-field decode details for the failing Windows run.
-            // Remove before finalizing.
-            foreach (var field in values.Fields)
-            {
-                output.WriteLine(
-                    $"FIELD name={field.Name} kind={field.Kind} text={field.ValueText ?? "<null>"} " +
-                    $"reason={field.UnavailableReason ?? "-"} type={field.DeclaredTypeName}");
-            }
-
-            if (OperatingSystem.IsWindows())
-            {
-                IntrospectWindowsDump(destination, output);
-            }
-
-            Assert.Equal("42", Field(values, "Count").ValueText);            Assert.Equal("True", Field(values, "Enabled").ValueText);
+            Assert.Equal("42", Field(values, "Count").ValueText);
+            Assert.Equal("True", Field(values, "Enabled").ValueText);
             Assert.Equal("'M'", Field(values, "Marker").ValueText);
             Assert.Equal("Ready (1)", Field(values, "State").ValueText);
             Assert.Equal("12", Field(values, "Limit").ValueText);
@@ -158,73 +142,4 @@ public sealed class ClrMdHeapObjectValueServiceAcceptanceTests(ITestOutputHelper
 
     private static HeapFieldValue Field(HeapObjectValueResult result, string name) =>
         result.Fields.Single(field => field.Name == name);
-
-    // TEMPORARY CI DIAGNOSTICS: raw ClrMD view of the captured dump on Windows,
-    // showing how Nullable<T> fields are represented. Remove before finalizing.
-    private static void IntrospectWindowsDump(string dumpPath, ITestOutputHelper output)
-    {
-        try
-        {
-            using var dataTarget = DataTarget.LoadDump(dumpPath);
-            var clrInfo = dataTarget.ClrVersions.FirstOrDefault();
-            if (clrInfo is null)
-            {
-                output.WriteLine("DBG no ClrVersions");
-                return;
-            }
-
-            var runtime = clrInfo.CreateRuntime();
-            var heap = runtime.Heap;
-            var probe = heap.EnumerateObjects()
-                .FirstOrDefault(candidate =>
-                    candidate.Type?.Name == "LiveDiagnosticsTarget.CacheProbe");
-            if (probe.Type is null)
-            {
-                output.WriteLine("DBG CacheProbe not found");
-                return;
-            }
-
-            output.WriteLine($"DBG obj={probe.Address:X} type={probe.Type.Name}");
-            foreach (var field in probe.Type.Fields)
-            {
-                output.WriteLine(
-                    $"DBG f={field.Name} elem={field.ElementType} type={field.Type?.Name} " +
-                    $"isVT={field.IsValueType} isObjRef={field.IsObjectReference} " +
-                    $"off={field.Offset} size={field.Size}");
-                if (field.Type?.Name?.Contains("Nullable", StringComparison.Ordinal) == true)
-                {
-                    try
-                    {
-                        var vt = probe.ReadValueTypeField(field);
-                        output.WriteLine(
-                            $"DBG   vt valid={vt.IsValid} addr=0x{vt.Address:X} " +
-                            $"type={vt.Type?.Name} size={vt.Size}");
-                        try
-                        {
-                            output.WriteLine($"DBG   hasValue={vt.ReadField<bool>("hasValue")}");
-                        }
-                        catch (Exception exception)
-                        {
-                            output.WriteLine($"DBG   hasValue error: {exception.GetType().Name}");
-                        }
-
-                        foreach (var nested in vt.Type?.Fields ?? [])
-                        {
-                            output.WriteLine(
-                                $"DBG   vtfield={nested.Name} elem={nested.ElementType} " +
-                                $"type={nested.Type?.Name} off={nested.Offset} size={nested.Size}");
-                        }
-                    }
-                    catch (Exception exception)
-                    {
-                        output.WriteLine($"DBG   vt error: {exception.GetType().Name}: {exception.Message}");
-                    }
-                }
-            }
-        }
-        catch (Exception exception)
-        {
-            output.WriteLine($"DBG data target error: {exception}");
-        }
-    }
 }
