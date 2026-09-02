@@ -33,6 +33,24 @@ public sealed class ClrMdHeapObjectValueServiceAcceptanceTests
                 WriteDumpFlags.None,
                 timeout.Token);
 
+            // TEMPORARY CI DIAGNOSTICS: preserve the captured dump as an artifact so the
+            // Windows decode failure can be reproduced locally. Remove before finalizing.
+            try
+            {
+                var artifactDir = Path.Combine(Directory.GetCurrentDirectory(), "artifacts");
+                Directory.CreateDirectory(artifactDir);
+                File.Copy(
+                    destination,
+                    Path.Combine(
+                        artifactDir,
+                        $"memscope-{Environment.OSVersion.Platform}-{Environment.OSVersion.Version}.dmp"),
+                    overwrite: true);
+            }
+            catch
+            {
+                // Best effort; never affect the test result.
+            }
+
             var snapshot = await new ClrMdHeapSnapshotLoader()
                 .LoadAsync(destination, timeout.Token);
             var probeType = snapshot.Types.Single(

@@ -37,3 +37,14 @@ jobs:
 
       - name: Test
         run: dotnet test MemoryProfiler.sln --configuration Release --no-build
+
+      # TEMPORARY CI DIAGNOSTICS: preserve captured acceptance dumps for local
+      # repro of the Windows decode failure. Remove before finalizing.
+      - name: Upload captured dumps
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: captured-dumps-${{ matrix.os }}
+          path: artifacts/**/*.dmp
+          if-no-files-found: ignore
+          retention-days: 1
