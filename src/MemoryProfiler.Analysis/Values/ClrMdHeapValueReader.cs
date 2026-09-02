@@ -228,6 +228,19 @@ internal static class ClrMdHeapValueReader
             }
 
             var vt = obj.ReadValueTypeField(field);
+            if (OperatingSystem.IsWindows())
+            {
+                Console.Error.WriteLine(
+                    "[DBG] ReadValueTypeField" +
+                    $" field={field.Name}" +
+                    $" objType={obj.Type?.Name}" +
+                    $" objAddr=0x{obj.Address:X}" +
+                    $" fieldType={field.Type?.Name}" +
+                    $" vtValid={vt.IsValid}" +
+                    $" vtType={vt.Type?.Name}" +
+                    $" vtAddr=0x{vt.Address:X}");
+            }
+
             if (!vt.IsValid)
             {
                 return Unavailable(field, "Unsupported value type");
@@ -279,6 +292,22 @@ internal static class ClrMdHeapValueReader
         CancellationToken cancellationToken)
     {
         var hasValue = nullable.ReadField<bool>("hasValue");
+        if (OperatingSystem.IsWindows())
+        {
+            var valueFieldProbe = nullable.Type!.Fields.FirstOrDefault(candidate => candidate.Name == "value");
+            Console.Error.WriteLine(
+                "[DBG] DecodeNullable" +
+                $" field={field.Name}" +
+                $" objFieldType={field.Type?.Name}" +
+                $" vtAddr=0x{nullable.Address:X}" +
+                $" vtValid={nullable.IsValid}" +
+                $" vtType={nullable.Type?.Name}" +
+                $" vtStaticSize={nullable.Type?.StaticSize}" +
+                $" hasValue={hasValue}" +
+                $" valueFieldType={valueFieldProbe?.Type?.Name}" +
+                $" valueFieldElem={valueFieldProbe?.ElementType}");
+        }
+
         if (!hasValue)
         {
             return Null(field);
