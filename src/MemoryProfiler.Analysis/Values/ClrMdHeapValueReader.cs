@@ -351,9 +351,15 @@ internal static class ClrMdHeapValueReader
             return Unavailable(field, "Unsupported value type");
         }
 
-        if (!TryResolveNullableUnderlying(field, module, reader, out var element, out var underlyingName))
+        if (!TryResolveNullableUnderlying(
+                field,
+                module,
+                reader,
+                out var element,
+                out var underlyingName,
+                out var failure))
         {
-            return Unavailable(field, "Unsupported value type");
+            return Unavailable(field, failure ?? "Unsupported value type");
         }
 
         var valueOffset = NullableValueOffset(element);
@@ -395,9 +401,6 @@ internal static class ClrMdHeapValueReader
                 null),
         };
     }
-
-    private static string NullableTypeName(string? openGenericName) =>
-        string.IsNullOrWhiteSpace(openGenericName) ? "System.Nullable<T>" : openGenericName;
 
     // Maps a metadata element-type code back to the closest ClrElementType used for
     // formatting. Only primitive underlying types of Nullable<T> are supported here;
@@ -506,21 +509,25 @@ internal static class ClrMdHeapValueReader
         ClrModule module,
         object reader,
         out ClrElementType element,
-        out string typeName)
+        out string typeName,
+        out string? failure)
     {
         element = ClrElementType.Unknown;
         typeName = string.Empty;
+        failure = null;
         try
         {
             var blob = new byte[module.MetadataLength];
             if (ReadExactly(reader, module.MetadataAddress, blob) != blob.Length)
             {
+                failure = "Nullable metadata read failed";
                 return false;
             }
 
             var metadataStart = FindMetadataRoot(blob);
             if (metadataStart < 0)
             {
+                failure = "Nullable metadata root not found";
                 return false;
             }
 
@@ -533,6 +540,7 @@ internal static class ClrMdHeapValueReader
             var signature = metadata.GetBlobReader(fieldDefinition.Signature);
             if (signature.ReadByte() != 0x06) // FIELD
             {
+                failure = "Nullable field signature not found";
                 return false;
             }
 
@@ -544,12 +552,14 @@ internal static class ClrMdHeapValueReader
                 case 0x15:
                     if (signature.ReadByte() != 0x11) // VALUETYPE
                     {
+                        failure = "Nullable signature kind mismatch";
                         return false;
                     }
 
                     _ = signature.ReadCompressedInteger(); // Nullable`1 TypeDefOrRef token
                     if (signature.ReadCompressedInteger() < 1) // argument count
                     {
+                        failure = "Nullable signature has no arguments";
                         return false;
                     }
 
@@ -561,6 +571,7 @@ internal static class ClrMdHeapValueReader
                     var token = signature.ReadCompressedInteger();
                     if ((token & 0x3) != 2) // TypeSpec
                     {
+                        failure = "Nullable signature is not a TypeSpec";
                         return false;
                     }
 
@@ -570,12 +581,14 @@ internal static class ClrMdHeapValueReader
                     if (typeSpecBytes.ReadByte() != 0x15 || // GENERICINST
                         typeSpecBytes.ReadByte() != 0x11) // VALUETYPE
                     {
+                        failure = "Nullable TypeSpec mismatch";
                         return false;
                     }
 
                     _ = typeSpecBytes.ReadCompressedInteger(); // Nullable`1 TypeDefOrRef token
                     if (typeSpecBytes.ReadCompressedInteger() < 1) // argument count
                     {
+                        failure = "Nullable TypeSpec has no arguments";
                         return false;
                     }
 
@@ -584,6 +597,7 @@ internal static class ClrMdHeapValueReader
                 }
 
                 default:
+                    failure = $"Nullable signature code 0x{typeCode:X2} unsupported";
                     return false;
             }
 
@@ -594,10 +608,17 @@ internal static class ClrMdHeapValueReader
                 argumentCode = signature.ReadByte();
             }
 
-            return TryMapElementCode(argumentCode, out element, out typeName);
+            var mapped = TryMapElementCode(argumentCode, out element, out typeName);
+            if (!mapped)
+            {
+                failure = $"Nullable argument code 0x{argumentCode:X2} unsupported";
+            }
+
+            return mapped;
         }
-        catch
+        catch (Exception exception)
         {
+            failure = $"Nullable metadata parse failed ({exception.GetType().Name})";
             return false;
         }
     }
