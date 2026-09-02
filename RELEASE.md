@@ -74,9 +74,10 @@ see this second run.
 
 ### Code signing (macOS) and secrets
 
-Signing is **optional and secret-gated**: if the secrets below are set on the repository, macOS
-packages are Developer ID-signed and notarized; if they are absent the workflow runs unsigned
-(same for the unsigned Windows installer). Until secrets are configured:
+Signing is **optional and all-or-nothing**: only when **every** secret below is set on the
+repository are macOS packages Developer ID-signed and notarized; if any of them is absent the
+signing steps are skipped and the workflow publishes an **unsigned** build instead of failing
+(the Windows installer is likewise unsigned). Until secrets are configured:
 
 - macOS builds are not notarized — Gatekeeper will warn users (right-click → Open to bypass).
 - Windows installer is unsigned — SmartScreen will warn users.
@@ -128,8 +129,8 @@ git push origin :refs/tags/v0.2.0                  # remote (only if it must be 
 ```
 
 ### Workflow fails at the signing step
-Usually missing/mismatched secrets. Either configure the secrets, or release unsigned — the
-signing steps are skipped automatically when `BUILD_CERTIFICATE_BASE64` is empty.
+Usually missing/mismatched secrets. Either configure the full set of secrets, or release unsigned —
+the signing steps are skipped automatically when any of the Apple secrets is missing.
 
 ### Version looks wrong (e.g. `0.1.0-preview.0.N`)
 The tag is missing or does not point at the released commit. Confirm with

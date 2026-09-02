@@ -6,9 +6,10 @@ name: Release
 #   - manually with workflow_dispatch + a version input (creates the tag too)
 #
 # The version comes from the tag via MinVer (parsed from the build log), or from
-# the workflow_dispatch input when run manually. Code signing/notarization steps
-# only run when the matching repository secrets exist, so the workflow can be
-# exercised unsigned before certificates are configured.
+# the workflow_dispatch input when run manually. macOS code signing/notarization
+# only runs when the full set of Apple secrets is configured; otherwise the app is
+# published unsigned, so the workflow can be exercised before certificates exist
+# and never fails on missing secrets.
 
 on:
   push:
@@ -187,6 +188,13 @@ jobs:
 
     runs-on: macos-latest
 
+    # All-or-nothing signing: the macOS package is only signed/notarized when every
+    # Apple secret is configured. If any of them is missing, the signing steps are
+    # skipped and an unsigned build is published instead - the build never fails
+    # because of missing secrets.
+    env:
+      APPLE_SIGNING_CONFIGURED: ${{ secrets.BUILD_CERTIFICATE_BASE64 != '' && secrets.INSTALLER_CERTIFICATE_BASE64 != '' && secrets.P12_PASSWORD != '' && secrets.APPLE_ID != '' && secrets.APPLE_PASSWORD != '' && secrets.APPLE_TEAM != '' && secrets.KEYCHAIN_PASSWORD != '' }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -248,11 +256,11 @@ jobs:
         continue-on-error: true
 
       # Signing/notarization secrets (BUILD_CERTIFICATE_BASE64, INSTALLER_CERTIFICATE_BASE64,
-      # P12_PASSWORD, APPLE_ID, APPLE_PASSWORD, APPLE_TEAM, KEYCHAIN_PASSWORD) are optional.
-      # Without them the package is built unsigned; with them the app is Developer ID
-      # signed and notarized.
+      # P12_PASSWORD, APPLE_ID, APPLE_PASSWORD, APPLE_TEAM, KEYCHAIN_PASSWORD) are optional
+      # and must be configured as a full set. If any of them is missing, this step is
+      # skipped and the app is published unsigned - the workflow never fails on missing secrets.
       - name: Install Apple certificates and notary profile
-        if: ${{ secrets.BUILD_CERTIFICATE_BASE64 != '' }}
+        if: env.APPLE_SIGNING_CONFIGURED == 'true'
         env:
           BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
           INSTALLER_CERTIFICATE_BASE64: ${{ secrets.INSTALLER_CERTIFICATE_BASE64 }}
@@ -297,8 +305,11 @@ jobs:
             --delta None \
             --noPortable \
             --icon memscope.icns)
-          if [ -f "$RUNNER_TEMP/app-signing.keychain-db" ]; then
+          if [ "$APPLE_SIGNING_CONFIGURED" == "true" ] && [ -f "$RUNNER_TEMP/app-signing.keychain-db" ]; then
+            echo "Apple signing secrets present - building a signed and notarized package."
             vpk_args+=(--signAppIdentity "$SIGN_APP_IDENTITY" --signInstallIdentity "$SIGN_INSTALL_IDENTITY" --notaryProfile velopack-profile --keychain "$RUNNER_TEMP/app-signing.keychain-db")
+          else
+            echo "Apple signing secrets not configured (or incomplete) - building an UNSIGNED package."
           fi
           vpk "${vpk_args[@]}"
 
@@ -310,7 +321,7 @@ jobs:
           retention-days: 30
 
       - name: Clean up keychain
-        if: ${{ always() && secrets.BUILD_CERTIFICATE_BASE64 != '' }}
+        if: ${{ always() && env.APPLE_SIGNING_CONFIGURED == 'true' }}
         run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db
 
   create-release:
