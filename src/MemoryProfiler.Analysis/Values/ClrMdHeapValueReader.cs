@@ -1,4 +1,7 @@
+using System.Collections.Immutable;
 using System.Globalization;
+using System.Reflection.Metadata;
+using System.Reflection.Metadata.Ecma335;
 using Microsoft.Diagnostics.Runtime;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Contracts.Heap;
@@ -228,25 +231,12 @@ internal static class ClrMdHeapValueReader
             }
 
             var vt = obj.ReadValueTypeField(field);
-            if (OperatingSystem.IsWindows())
-            {
-                Console.Error.WriteLine(
-                    "[DBG] ReadValueTypeField" +
-                    $" field={field.Name}" +
-                    $" objType={obj.Type?.Name}" +
-                    $" objAddr=0x{obj.Address:X}" +
-                    $" fieldType={field.Type?.Name}" +
-                    $" vtValid={vt.IsValid}" +
-                    $" vtType={vt.Type?.Name}" +
-                    $" vtAddr=0x{vt.Address:X}");
-            }
-
             if (!vt.IsValid)
             {
                 return Unavailable(field, "Unsupported value type");
             }
 
-            return DecodeValueType(field, vt, options, cancellationToken);
+            return DecodeValueType(field, vt, obj, options, cancellationToken);
         }
         catch (Exception exception) when (
             exception is ArgumentException or
@@ -261,6 +251,7 @@ internal static class ClrMdHeapValueReader
     private static HeapFieldValue DecodeValueType(
         ClrInstanceField field,
         ClrValueType vt,
+        ClrObject obj,
         ObjectValueReadOptions options,
         CancellationToken cancellationToken)
     {
@@ -279,7 +270,7 @@ internal static class ClrMdHeapValueReader
 
         if (vt.Type is not null && HasField(vt.Type, "hasValue"))
         {
-            return DecodeNullable(field, vt, options, cancellationToken);
+            return DecodeNullable(field, vt, obj, options, cancellationToken);
         }
 
         return Unavailable(field, "Unsupported value type");
@@ -288,44 +279,377 @@ internal static class ClrMdHeapValueReader
     private static HeapFieldValue DecodeNullable(
         ClrInstanceField field,
         ClrValueType nullable,
+        ClrObject obj,
         ObjectValueReadOptions options,
         CancellationToken cancellationToken)
     {
-        var hasValue = nullable.ReadField<bool>("hasValue");
-        if (OperatingSystem.IsWindows())
+        var valueField = nullable.Type?.Fields
+            .FirstOrDefault(candidate => candidate.Name == "value");
+
+        if (IsDegenerateNullableLayout(valueField))
         {
-            var valueFieldProbe = nullable.Type!.Fields.FirstOrDefault(candidate => candidate.Name == "value");
-            Console.Error.WriteLine(
-                "[DBG] DecodeNullable" +
-                $" field={field.Name}" +
-                $" objFieldType={field.Type?.Name}" +
-                $" vtAddr=0x{nullable.Address:X}" +
-                $" vtValid={nullable.IsValid}" +
-                $" vtType={nullable.Type?.Name}" +
-                $" vtStaticSize={nullable.Type?.StaticSize}" +
-                $" hasValue={hasValue}" +
-                $" valueFieldType={valueFieldProbe?.Type?.Name}" +
-                $" valueFieldElem={valueFieldProbe?.ElementType}");
+            return DecodeNullableFromRawMemory(field, obj);
         }
 
+        var hasValue = nullable.ReadField<bool>("hasValue");
         if (!hasValue)
         {
             return Null(field);
         }
 
-        var valueField = nullable.Type!.Fields.FirstOrDefault(candidate => candidate.Name == "value");
         if (valueField is null)
         {
             return Unavailable(field, "Unsupported value type");
         }
 
-        return DecodeValueTypeMember(field, nullable, valueField, options, cancellationToken);
+        return DecodeValueTypeMember(field, nullable, valueField, obj, options, cancellationToken);
     }
+
+    // Windows minidumps can make ClrMD resolve a Nullable<T> instance field as its
+    // open generic definition: the "value" member is then a Class-typed placeholder
+    // ("T") reported at offset 0 with the size of a reference, and hasValue is placed
+    // after it. Reading through that ClrValueType therefore lands on the wrong bytes.
+    // The instance field offsets themselves stay accurate, so detect the degenerate
+    // shape and decode the raw field slot instead.
+    private static bool IsDegenerateNullableLayout(ClrInstanceField? valueField) =>
+        valueField is not null &&
+        valueField.ElementType == ClrElementType.Class &&
+        string.Equals(valueField.Type?.Name, "T", StringComparison.Ordinal);
+
+    private static HeapFieldValue DecodeNullableFromRawMemory(
+        ClrInstanceField field,
+        ClrObject obj)
+    {
+        var heap = obj.Type?.Heap;
+        var reader = heap?.Runtime.DataTarget.DataReader;
+        if (heap is null || reader is null || field.Offset < 0)
+        {
+            return Unavailable(field, "Value could not be read");
+        }
+
+        var slotAddress = obj.Address + (uint)field.Offset;
+
+        // Real Nullable<T> instance-field layout: bool hasValue occupies the first
+        // byte of the slot regardless of how ClrMD models the open generic.
+        if (!TryReadByte(reader, slotAddress, out var hasValue))
+        {
+            return Unavailable(field, "Value could not be read");
+        }
+
+        if (hasValue == 0)
+        {
+            return Null(field, field.Type?.Name ?? "System.Nullable<T>");
+        }
+
+        var module = field.ContainingType?.Module;
+        if (module is null ||
+            module.IsDynamic ||
+            !module.IsPEFile ||
+            module.MetadataAddress == 0 ||
+            module.MetadataLength is 0 or > 64 * 1024 * 1024)
+        {
+            return Unavailable(field, "Unsupported value type");
+        }
+
+        if (!TryResolveNullableUnderlying(field, module, reader, out var element, out var underlyingName))
+        {
+            return Unavailable(field, "Unsupported value type");
+        }
+
+        var valueOffset = NullableValueOffset(element);
+        var size = SizeOf(element);
+        var buffer = new byte[size];
+        if (ReadExactly(reader, slotAddress + valueOffset, buffer) != size)
+        {
+            return Unavailable(field, "Value could not be read");
+        }
+
+        var value = ReadPrimitiveFromBytes(element, buffer);
+        if (value is null)
+        {
+            return Unavailable(field, "Unsupported value type");
+        }
+
+        var declaredTypeName = $"System.Nullable<{underlyingName}>";
+        return element switch
+        {
+            ClrElementType.Char => Field(
+                field.Name,
+                declaredTypeName,
+                HeapValueKind.Primitive,
+                HeapValueFormatting.Character((char)value),
+                null,
+                null,
+                false,
+                null,
+                null),
+            _ => Field(
+                field.Name,
+                declaredTypeName,
+                HeapValueKind.Primitive,
+                Invariant(value),
+                null,
+                null,
+                false,
+                null,
+                null),
+        };
+    }
+
+    private static string NullableTypeName(string? openGenericName) =>
+        string.IsNullOrWhiteSpace(openGenericName) ? "System.Nullable<T>" : openGenericName;
+
+    // Maps a metadata element-type code back to the closest ClrElementType used for
+    // formatting. Only primitive underlying types of Nullable<T> are supported here;
+    // anything else (enums, structs, user types) is reported as unavailable.
+    private static bool TryMapElementCode(int code, out ClrElementType element, out string typeName)
+    {
+        switch (code)
+        {
+            case 0x02: // ELEMENT_TYPE_BOOLEAN
+                element = ClrElementType.Boolean;
+                typeName = "System.Boolean";
+                return true;
+            case 0x03: // ELEMENT_TYPE_CHAR
+                element = ClrElementType.Char;
+                typeName = "System.Char";
+                return true;
+            case 0x04: // ELEMENT_TYPE_I1
+                element = ClrElementType.Int8;
+                typeName = "System.SByte";
+                return true;
+            case 0x05: // ELEMENT_TYPE_U1
+                element = ClrElementType.UInt8;
+                typeName = "System.Byte";
+                return true;
+            case 0x06: // ELEMENT_TYPE_I2
+                element = ClrElementType.Int16;
+                typeName = "System.Int16";
+                return true;
+            case 0x07: // ELEMENT_TYPE_U2
+                element = ClrElementType.UInt16;
+                typeName = "System.UInt16";
+                return true;
+            case 0x08: // ELEMENT_TYPE_I4
+                element = ClrElementType.Int32;
+                typeName = "System.Int32";
+                return true;
+            case 0x09: // ELEMENT_TYPE_U4
+                element = ClrElementType.UInt32;
+                typeName = "System.UInt32";
+                return true;
+            case 0x0A: // ELEMENT_TYPE_I8
+                element = ClrElementType.Int64;
+                typeName = "System.Int64";
+                return true;
+            case 0x0B: // ELEMENT_TYPE_U8
+                element = ClrElementType.UInt64;
+                typeName = "System.UInt64";
+                return true;
+            case 0x0C: // ELEMENT_TYPE_R4
+                element = ClrElementType.Float;
+                typeName = "System.Single";
+                return true;
+            case 0x0D: // ELEMENT_TYPE_R8
+                element = ClrElementType.Double;
+                typeName = "System.Double";
+                return true;
+            default:
+                element = ClrElementType.Unknown;
+                typeName = string.Empty;
+                return false;
+        }
+    }
+
+    private static uint NullableValueOffset(ClrElementType element) =>
+        (uint)AlignUp(1, (int)SizeOf(element));
+
+    private static uint SizeOf(ClrElementType element) =>
+        element switch
+        {
+            ClrElementType.Boolean or ClrElementType.Int8 or ClrElementType.UInt8 => 1,
+            ClrElementType.Char or ClrElementType.Int16 or ClrElementType.UInt16 => 2,
+            ClrElementType.Int32 or ClrElementType.UInt32 or ClrElementType.Float => 4,
+            ClrElementType.Int64 or ClrElementType.UInt64 or ClrElementType.Double => 8,
+            _ => 0,
+        };
+
+    private static int AlignUp(int value, int alignment) =>
+        (value + alignment - 1) / alignment * alignment;
+
+    private static object? ReadPrimitiveFromBytes(ClrElementType element, byte[] buffer)
+    {
+        Span<byte> span = buffer;
+        return element switch
+        {
+            ClrElementType.Boolean => span[0] != 0,
+            ClrElementType.Char => (char)System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(span),
+            ClrElementType.Int8 => unchecked((sbyte)span[0]),
+            ClrElementType.UInt8 => span[0],
+            ClrElementType.Int16 => System.Buffers.Binary.BinaryPrimitives.ReadInt16LittleEndian(span),
+            ClrElementType.UInt16 => System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(span),
+            ClrElementType.Int32 => System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(span),
+            ClrElementType.UInt32 => System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(span),
+            ClrElementType.Int64 => System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(span),
+            ClrElementType.UInt64 => System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(span),
+            ClrElementType.Float => System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(span),
+            ClrElementType.Double => System.Buffers.Binary.BinaryPrimitives.ReadDoubleLittleEndian(span),
+            _ => null,
+        };
+    }
+
+    // Resolves the element type that T stands for in a Nullable<T> field whose
+    // ClrMD type came back as the open generic definition. The instance field's
+    // signature in the owning module's metadata carries the closed generic argument.
+    private static bool TryResolveNullableUnderlying(
+        ClrInstanceField field,
+        ClrModule module,
+        object reader,
+        out ClrElementType element,
+        out string typeName)
+    {
+        element = ClrElementType.Unknown;
+        typeName = string.Empty;
+        try
+        {
+            var blob = new byte[module.MetadataLength];
+            if (ReadExactly(reader, module.MetadataAddress, blob) != blob.Length)
+            {
+                return false;
+            }
+
+            var metadataStart = FindMetadataRoot(blob);
+            if (metadataStart < 0)
+            {
+                return false;
+            }
+
+            var handle = MetadataTokens.FieldDefinitionHandle(field.Token & 0x00FFFFFF);
+            using var provider = MetadataReaderProvider.FromMetadataImage(
+                ImmutableArray.Create(blob, metadataStart, blob.Length - metadataStart));
+            var metadata = provider.GetMetadataReader();
+
+            var fieldDefinition = metadata.GetFieldDefinition(handle);
+            var signature = metadata.GetBlobReader(fieldDefinition.Signature);
+            if (signature.ReadByte() != 0x06) // FIELD
+            {
+                return false;
+            }
+
+            var typeCode = signature.ReadByte();
+            switch (typeCode)
+            {
+                // ELEMENT_TYPE_GENERICINST: the generic value type (Nullable`1) and its
+                // arguments are inlined right after the field signature header.
+                case 0x15:
+                    if (signature.ReadByte() != 0x11) // VALUETYPE
+                    {
+                        return false;
+                    }
+
+                    _ = signature.ReadCompressedInteger(); // Nullable`1 TypeDefOrRef token
+                    if (signature.ReadCompressedInteger() < 1) // argument count
+                    {
+                        return false;
+                    }
+
+                    break;
+
+                // ELEMENT_TYPE_VALUETYPE through a TypeSpec token (alternate encoding).
+                case 0x11:
+                {
+                    var token = signature.ReadCompressedInteger();
+                    if ((token & 0x3) != 2) // TypeSpec
+                    {
+                        return false;
+                    }
+
+                    var typeSpec = metadata.GetTypeSpecification(
+                        MetadataTokens.TypeSpecificationHandle(token >> 2));
+                    var typeSpecBytes = metadata.GetBlobReader(typeSpec.Signature);
+                    if (typeSpecBytes.ReadByte() != 0x15 || // GENERICINST
+                        typeSpecBytes.ReadByte() != 0x11) // VALUETYPE
+                    {
+                        return false;
+                    }
+
+                    _ = typeSpecBytes.ReadCompressedInteger(); // Nullable`1 TypeDefOrRef token
+                    if (typeSpecBytes.ReadCompressedInteger() < 1) // argument count
+                    {
+                        return false;
+                    }
+
+                    signature = typeSpecBytes; // continue reading the argument list below
+                    break;
+                }
+
+                default:
+                    return false;
+            }
+
+            var argumentCode = signature.ReadByte();
+            while (argumentCode is 0x1E or 0x1F) // optional/required modifiers
+            {
+                _ = signature.ReadCompressedInteger();
+                argumentCode = signature.ReadByte();
+            }
+
+            return TryMapElementCode(argumentCode, out element, out typeName);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // Some data readers report module metadata roots that start directly at the
+    // BSJB signature; be defensive and scan a little if a leading signature is absent.
+    private static int FindMetadataRoot(byte[] blob)
+    {
+        if (blob.Length >= 4 &&
+            blob[0] == 'B' && blob[1] == 'S' && blob[2] == 'J' && blob[3] == 'B')
+        {
+            return 0;
+        }
+
+        var limit = Math.Min(blob.Length - 4, 4096);
+        for (var index = 0; index <= limit; index++)
+        {
+            if (blob[index] == 'B' &&
+                blob[index + 1] == 'S' &&
+                blob[index + 2] == 'J' &&
+                blob[index + 3] == 'B')
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool TryReadByte(object reader, ulong address, out byte value)
+    {
+        Span<byte> buffer = stackalloc byte[1];
+        value = 0;
+        if (ReadExactly(reader, address, buffer) == 1)
+        {
+            value = buffer[0];
+            return true;
+        }
+
+        return false;
+    }
+
+    private static int ReadExactly(object reader, ulong address, Span<byte> buffer) =>
+        reader is IMemoryReader memory
+            ? memory.Read(address, buffer)
+            : 0;
 
     private static HeapFieldValue DecodeValueTypeMember(
         ClrInstanceField field,
         ClrValueType valueType,
         ClrInstanceField valueField,
+        ClrObject obj,
         ObjectValueReadOptions options,
         CancellationToken cancellationToken)
     {
@@ -351,7 +675,7 @@ internal static class ClrMdHeapValueReader
                 ClrElementType.Float => Primitive(field, valueType.ReadField<float>(valueField)),
                 ClrElementType.Double => Primitive(field, valueType.ReadField<double>(valueField)),
                 ClrElementType.String => String(field, valueType.ReadObjectField(valueField), options.StringLimit),
-                ClrElementType.Struct => DecodeNestedStruct(field, valueType, valueField, options, cancellationToken),
+                ClrElementType.Struct => DecodeNestedStruct(field, valueType, valueField, obj, options, cancellationToken),
                 _ => Unavailable(field, "Unsupported value type"),
             };
         }
@@ -369,6 +693,7 @@ internal static class ClrMdHeapValueReader
         ClrInstanceField field,
         ClrValueType parent,
         ClrInstanceField valueField,
+        ClrObject obj,
         ObjectValueReadOptions options,
         CancellationToken cancellationToken)
     {
@@ -378,7 +703,7 @@ internal static class ClrMdHeapValueReader
             return Unavailable(field, "Unsupported value type");
         }
 
-        return DecodeValueType(field, nested, options, cancellationToken);
+        return DecodeValueType(field, nested, obj, options, cancellationToken);
     }
 
     private static HeapFieldValue ReadEnum(ClrInstanceField field, ClrValueType valueType)
@@ -603,6 +928,18 @@ internal static class ClrMdHeapValueReader
 
     private static HeapFieldValue Null(ClrInstanceField field) =>
         Field(field, HeapValueKind.Null, null, null, null, null);
+
+    private static HeapFieldValue Null(ClrInstanceField field, string declaredTypeName) =>
+        Field(
+            field.Name ?? string.Empty,
+            declaredTypeName,
+            HeapValueKind.Null,
+            null,
+            null,
+            null,
+            false,
+            null,
+            null);
 
     private static HeapFieldValue Unavailable(ClrInstanceField field, string reason) =>
         Field(field, HeapValueKind.Unavailable, null, null, null, reason);
