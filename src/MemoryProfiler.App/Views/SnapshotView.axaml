@@ -288,8 +288,12 @@
             </DataGrid.Columns>
           </DataGrid>
 
-          <Grid IsVisible="{Binding IsTopRetainersMode}">
-            <StackPanel Orientation="Horizontal"
+          <Grid x:Name="TopRetainersContentGrid"
+                IsVisible="{Binding IsTopRetainersMode}"
+                RowDefinitions="Auto,*">
+            <StackPanel x:Name="TopRetainersToolbar"
+                        Grid.Row="0"
+                        Orientation="Horizontal"
                         Spacing="8"
                         Margin="10,6"
                         VerticalAlignment="Top">
@@ -307,7 +311,9 @@
                       Content="Load more" />
             </StackPanel>
 
-            <StackPanel IsVisible="{Binding TopRetainers.ShowLoading}"
+            <StackPanel x:Name="TopRetainersLoadingState"
+                        Grid.Row="1"
+                        IsVisible="{Binding TopRetainers.ShowLoading}"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
                         Margin="0,40"
@@ -321,7 +327,9 @@
                          Text="Computing retained memory owners..." />
             </StackPanel>
 
-            <StackPanel IsVisible="{Binding TopRetainers.ShowUnavailable}"
+            <StackPanel x:Name="TopRetainersUnavailableState"
+                        Grid.Row="1"
+                        IsVisible="{Binding TopRetainers.ShowUnavailable}"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
                         Margin="0,40"
@@ -335,7 +343,9 @@
                          Text="Retained-size analysis did not complete for this snapshot." />
             </StackPanel>
 
-            <StackPanel IsVisible="{Binding TopRetainers.ShowEmpty}"
+            <StackPanel x:Name="TopRetainersEmptyState"
+                        Grid.Row="1"
+                        IsVisible="{Binding TopRetainers.ShowEmpty}"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
                         Margin="0,40"
@@ -346,6 +356,7 @@
             </StackPanel>
 
             <DataGrid x:Name="TopRetainersDataGrid"
+                      Grid.Row="1"
                       IsVisible="{Binding TopRetainers.ShowTable}"
                       AutomationProperties.Name="Top retainers"
                       AutoGenerateColumns="False"

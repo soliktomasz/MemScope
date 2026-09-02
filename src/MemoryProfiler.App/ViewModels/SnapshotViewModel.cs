@@ -525,11 +525,19 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
                 OnPropertyChanged(nameof(HasRetainedSizeError));
             }).ConfigureAwait(false);
 
+            if (version == Volatile.Read(ref _retainedSizeVersion))
+            {
+                await ObjectDetails.SetDominatorResultAsync(result).ConfigureAwait(false);
+            }
+
             await TopRetainers.SetResultAsync(result, token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            // A new snapshot or snapshot closure superseded the computation.
+            if (version == Volatile.Read(ref _retainedSizeVersion))
+            {
+                await TopRetainers.ClearAsync().ConfigureAwait(false);
+            }
         }
         catch (Exception)
         {
@@ -772,6 +780,11 @@ public sealed class SnapshotViewModel : ViewModelBase, IAsyncDisposable
 
         try
         {
+            if (location is not ObjectDetailsLocation)
+            {
+                await ObjectDetails.ClearAsync().ConfigureAwait(false);
+            }
+
             switch (location)
             {
                 case TypesLocation:

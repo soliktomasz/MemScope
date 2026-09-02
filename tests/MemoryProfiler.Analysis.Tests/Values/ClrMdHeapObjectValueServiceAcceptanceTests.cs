@@ -84,7 +84,23 @@ public sealed class ClrMdHeapObjectValueServiceAcceptanceTests
             Assert.Equal(500, page0.Fields.Count);
             Assert.Equal("[0]", page0.Fields[0].Name);
             Assert.Equal("[499]", page0.Fields[^1].Name);
+            Assert.Equal(HeapValueKind.ArrayElement, page0.Fields[0].Kind);
+            Assert.Equal("System.Int32", page0.Fields[0].DeclaredTypeName);
+            Assert.Equal("0", page0.Fields[0].ValueText);
             Assert.True(page0.HasMoreElements);
+
+            var payloadAddress = Field(values, "Payload").ReferencedObjectAddress
+                ?? throw new InvalidOperationException(
+                    "The Payload field must carry a referenced object address.");
+            var payload = await service.ReadAsync(
+                snapshot,
+                payloadAddress,
+                new ObjectValueReadOptions(ArrayOffset: 0, ArrayLimit: 1),
+                timeout.Token);
+            Assert.Equal(HeapValueKind.ArrayElement, payload.Fields[0].Kind);
+            Assert.Equal("System.Byte[]", payload.Fields[0].DeclaredTypeName);
+            Assert.NotNull(payload.Fields[0].ReferencedObjectAddress);
+            Assert.Equal("System.Byte[]", payload.Fields[0].ReferencedObjectTypeName);
 
             var page500 = await service.ReadAsync(
                 snapshot,

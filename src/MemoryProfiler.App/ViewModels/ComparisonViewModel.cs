@@ -157,6 +157,8 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
 
     public bool ShowChoosePrompt => !HasCompared && !IsLoading && !HasError;
 
+    public bool ShowStatusOrResult => IsLoading || HasError || HasCompared;
+
     public bool ShowTable => HasCompared && Table.HasFilteredDeltas;
 
     public bool ShowNoChanges => HasCompared && Table.HasNoDeltas;
@@ -590,6 +592,7 @@ public sealed class ComparisonViewModel : ViewModelBase, IAsyncDisposable
     private void NotifyDisplayStateChanged()
     {
         OnPropertyChanged(nameof(ShowChoosePrompt));
+        OnPropertyChanged(nameof(ShowStatusOrResult));
         OnPropertyChanged(nameof(ShowTable));
         OnPropertyChanged(nameof(ShowNoChanges));
         OnPropertyChanged(nameof(ShowNoFilteredDeltas));

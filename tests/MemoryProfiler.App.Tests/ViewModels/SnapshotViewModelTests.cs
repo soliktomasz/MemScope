@@ -4,6 +4,7 @@ using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
 using MemoryProfiler.Analysis.Roots;
+using MemoryProfiler.Analysis.Values;
 using MemoryProfiler.App.Errors;
 using MemoryProfiler.App.Models;
 using MemoryProfiler.App.Navigation;
@@ -47,18 +48,58 @@ public sealed class SnapshotViewModelTests
     {
         var cache = new DominatorInfo(0x2000, "MyApp.Cache", 64, 400, 12);
         var result = new DominatorAnalysisResult([cache], []);
+        var gate = new TaskCompletionSource<DominatorAnalysisResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         await using var viewModel = new SnapshotViewModel(
             new StubSnapshotLoader(Snapshot()),
             new StubHeapObjectRepository([]),
             new StubObjectReferenceService([]),
             new StubGcRootService([]),
             ImmediateUiDispatcher.Instance,
-            dominatorService: new StubDominatorService(result));
+            dominatorService: new StubDominatorService(
+                (_, cancellationToken) => gate.Task.WaitAsync(cancellationToken)),
+            objectValueService: new StubObjectValueService());
 
         await viewModel.LoadAsync("sample.dmp");
+        await viewModel.InspectObjectAsync(new HeapObjectRowViewModel(
+            new HeapObjectInfo(0x2000, 0x1000, "MyApp.Cache", 64, "Gen2")));
+        await WaitUntilAsync(() => viewModel.ObjectDetails.HasSnapshot);
+        Assert.False(viewModel.ObjectDetails.HasRetainedMetrics);
+
+        gate.SetResult(result);
 
         await WaitUntilAsync(() => viewModel.TopRetainers.Retainers.Count > 0);
+        await WaitUntilAsync(() => viewModel.ObjectDetails.HasRetainedMetrics);
         Assert.Equal(cache, viewModel.TopRetainers.Retainers[0].Info);
+        Assert.Equal("400 B", viewModel.ObjectDetails.RetainedSizeDisplay);
+    }
+
+    [Fact]
+    public async Task NavigatingAwayClearsObjectDetailsBeforeApplyingLocation()
+    {
+        var objectValues = new GatedObjectValueService();
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(Snapshot()),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            ImmediateUiDispatcher.Instance,
+            objectValueService: objectValues);
+
+        await viewModel.LoadAsync("sample.dmp");
+        await viewModel.InspectObjectAsync(new HeapObjectRowViewModel(
+            new HeapObjectInfo(0x2000, 0x1000, "MyApp.Cache", 64, "Gen2")));
+        await objectValues.Started.WaitAsync(TimeSpan.FromSeconds(5));
+
+        viewModel.GoBackCommand.Execute(null);
+        await WaitUntilAsync(() => !viewModel.ObjectDetails.HasSnapshot);
+        Assert.True(objectValues.Token.IsCancellationRequested);
+
+        objectValues.Complete();
+        await objectValues.Returned.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.IsType<TypesLocation>(viewModel.CurrentLocation);
+        Assert.False(viewModel.ObjectDetails.HasSnapshot);
     }
 
     [Fact]
@@ -894,6 +935,36 @@ public sealed class SnapshotViewModelTests
     }
 
     [Fact]
+    public async Task CancellingRetainedSizeComputationClearsTopRetainersLoadingState()
+    {
+        var started = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var dominatorService = new StubDominatorService(async (_, cancellationToken) =>
+        {
+            started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return new DominatorAnalysisResult([], []);
+        });
+        await using var viewModel = new SnapshotViewModel(
+            new StubSnapshotLoader(Snapshot()),
+            new StubHeapObjectRepository([]),
+            new StubObjectReferenceService([]),
+            new StubGcRootService([]),
+            ImmediateUiDispatcher.Instance,
+            dominatorService: dominatorService);
+
+        await viewModel.LoadAsync("sample.dmp");
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(viewModel.TopRetainers.IsLoading);
+
+        viewModel.CancelRetainedSizeCommand.Execute(null);
+        await WaitUntilAsync(() => !viewModel.IsComputingRetainedSizes);
+
+        Assert.False(viewModel.TopRetainers.IsLoading);
+        Assert.True(viewModel.TopRetainers.ShowIdle);
+    }
+
+    [Fact]
     public async Task RetainedSizeComputationFailureIsNonFatal()
     {
         var dominatorService = new StubDominatorService(
@@ -1012,6 +1083,49 @@ public sealed class SnapshotViewModelTests
             cancellationToken.ThrowIfCancellationRequested();
             Text = text;
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class StubObjectValueService : IHeapObjectValueService
+    {
+        public Task<HeapObjectValueResult> ReadAsync(
+            HeapSnapshot snapshot,
+            ulong objectAddress,
+            ObjectValueReadOptions options,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new HeapObjectValueResult(
+                new HeapObjectInfo(objectAddress, 0x1000, "MyApp.Cache", 64, "Gen2"),
+                [], 0, false));
+    }
+
+    private sealed class GatedObjectValueService : IHeapObjectValueService
+    {
+        private readonly TaskCompletionSource<HeapObjectValueResult> _completion = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _started = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _returned = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Started => _started.Task;
+        public Task Returned => _returned.Task;
+        public CancellationToken Token { get; private set; }
+
+        public void Complete() => _completion.TrySetResult(new HeapObjectValueResult(
+            new HeapObjectInfo(0x2000, 0x1000, "MyApp.Cache", 64, "Gen2"),
+            [], 0, false));
+
+        public async Task<HeapObjectValueResult> ReadAsync(
+            HeapSnapshot snapshot,
+            ulong objectAddress,
+            ObjectValueReadOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            Token = cancellationToken;
+            _started.TrySetResult();
+            var result = await _completion.Task.ConfigureAwait(false);
+            _returned.TrySetResult();
+            return result;
         }
     }
 

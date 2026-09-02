@@ -71,4 +71,29 @@ public sealed class TopRetainersAndObjectDetailsViewTests
         Assert.NotNull(loadMore);
         Assert.NotNull(cancel);
     }
+
+    [Fact]
+    public void TopRetainersContentReservesToolbarRow()
+    {
+        var view = CreateView();
+        var content = view.FindControl<Grid>("TopRetainersContentGrid");
+        var toolbar = view.FindControl<StackPanel>("TopRetainersToolbar");
+        var loading = view.FindControl<StackPanel>("TopRetainersLoadingState");
+        var unavailable = view.FindControl<StackPanel>("TopRetainersUnavailableState");
+        var empty = view.FindControl<StackPanel>("TopRetainersEmptyState");
+        var results = view.FindControl<DataGrid>("TopRetainersDataGrid");
+
+        Assert.NotNull(content);
+        Assert.Equal(2, content!.RowDefinitions.Count);
+        Assert.NotNull(toolbar);
+        Assert.NotNull(loading);
+        Assert.NotNull(unavailable);
+        Assert.NotNull(empty);
+        Assert.NotNull(results);
+        Assert.Equal(0, Grid.GetRow(toolbar!));
+        Assert.Equal(1, Grid.GetRow(loading!));
+        Assert.Equal(1, Grid.GetRow(unavailable!));
+        Assert.Equal(1, Grid.GetRow(empty!));
+        Assert.Equal(1, Grid.GetRow(results!));
+    }
 }

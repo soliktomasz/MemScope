@@ -149,6 +149,24 @@ public sealed class ObjectDetailsViewModelTests
     }
 
     [Fact]
+    public async Task CurrentLoadCancellationClearsLoadingState()
+    {
+        var service = new BlockingValueService();
+        var viewModel = new ObjectDetailsViewModel(service, ImmediateUiDispatcher.Instance);
+        await using var _ = viewModel;
+        using var cancellation = new CancellationTokenSource();
+
+        var load = viewModel.ShowAsync(
+            Snapshot(), 0x2000, "MyApp.Cache", null, null, cancellation.Token);
+        await service.Started;
+
+        cancellation.Cancel();
+        await load;
+
+        Assert.False(viewModel.IsLoadingValues);
+    }
+
+    [Fact]
     public async Task DisposeAsyncClearsRowsAndCancelsWork()
     {
         var service = new BlockingValueService();
@@ -227,6 +245,26 @@ public sealed class ObjectDetailsViewModelTests
     }
 
     [Fact]
+    public async Task ArrayPageLoadUsesCancellationAndPublishesLoadingState()
+    {
+        var service = new CancellablePageValueService();
+        var viewModel = new ObjectDetailsViewModel(service, ImmediateUiDispatcher.Instance);
+        await using var _ = viewModel;
+
+        await viewModel.ShowAsync(Snapshot(), 0x3000, "System.Int32[]", null, null);
+        var page = ((AsyncCommand)viewModel.LoadNextArrayPageCommand).ExecuteAsync();
+        await service.PageStarted;
+
+        Assert.True(viewModel.IsLoadingValues);
+        Assert.True(viewModel.CancelCommand.CanExecute(null));
+        viewModel.CancelCommand.Execute(null);
+        await page;
+
+        Assert.True(service.PageToken.IsCancellationRequested);
+        Assert.False(viewModel.IsLoadingValues);
+    }
+
+    [Fact]
     public async Task ShowMoreStringsReplacesTruncatedRows()
     {
         var service = new ControllableValueService(options =>
@@ -247,6 +285,27 @@ public sealed class ObjectDetailsViewModelTests
         Assert.Single(viewModel.Fields);
         Assert.Equal(5000, viewModel.Fields[0].ValueDisplay!.Length);
         Assert.False(viewModel.Fields[0].IsTruncated);
+    }
+
+    [Fact]
+    public async Task StringExpansionUsesCancellationAndPublishesLoadingState()
+    {
+        var service = new CancellableStringValueService();
+        var viewModel = new ObjectDetailsViewModel(service, ImmediateUiDispatcher.Instance);
+        await using var _ = viewModel;
+
+        await viewModel.ShowAsync(Snapshot(), 0x2000, "MyApp.Cache", null, null);
+        var expansion = ((AsyncCommand)viewModel.ShowMoreStringsCommand).ExecuteAsync();
+        await service.ExpansionStarted;
+
+        Assert.True(viewModel.IsLoadingValues);
+        Assert.True(viewModel.CancelCommand.CanExecute(null));
+        viewModel.CancelCommand.Execute(null);
+        var completed = await Task.WhenAny(expansion, Task.Delay(TimeSpan.FromSeconds(1)));
+
+        Assert.Same(expansion, completed);
+        Assert.True(service.ExpansionToken.IsCancellationRequested);
+        Assert.False(viewModel.IsLoadingValues);
     }
 
     [Fact]
@@ -347,5 +406,66 @@ public sealed class ObjectDetailsViewModelTests
             ObjectValueReadOptions options,
             CancellationToken cancellationToken = default) =>
             _gates[objectAddress].Task;
+    }
+
+    private sealed class CancellablePageValueService : IHeapObjectValueService
+    {
+        private readonly TaskCompletionSource _pageStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task PageStarted => _pageStarted.Task;
+        public CancellationToken PageToken { get; private set; }
+
+        public async Task<HeapObjectValueResult> ReadAsync(
+            HeapSnapshot snapshot,
+            ulong objectAddress,
+            ObjectValueReadOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            if (options.ArrayOffset > 0)
+            {
+                PageToken = cancellationToken;
+                _pageStarted.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+
+            return new HeapObjectValueResult(
+                new HeapObjectInfo(objectAddress, 0x1000, "System.Int32[]", 64, "Gen0"),
+                [Primitive("[0]", "System.Int32", "0")], 2, options.ArrayOffset == 0);
+        }
+    }
+
+    private sealed class CancellableStringValueService : IHeapObjectValueService
+    {
+        private readonly TaskCompletionSource _expansionStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task ExpansionStarted => _expansionStarted.Task;
+        public CancellationToken ExpansionToken { get; private set; }
+
+        public async Task<HeapObjectValueResult> ReadAsync(
+            HeapSnapshot snapshot,
+            ulong objectAddress,
+            ObjectValueReadOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            if (options.StringLimit > 4096)
+            {
+                ExpansionToken = cancellationToken;
+                _expansionStarted.TrySetResult();
+                await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken);
+            }
+
+            return ObjectResult(new HeapFieldValue(
+                "_name",
+                "System.String",
+                HeapValueKind.String,
+                new string('x', 4096),
+                null,
+                null,
+                true,
+                5000,
+                null));
+        }
     }
 }

@@ -222,7 +222,14 @@ public sealed class TopRetainersViewModel : ViewModelBase, IAsyncDisposable
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            // A newer search, clear, or disposal superseded this one.
+            await PublishAsync(() =>
+            {
+                if (version == Volatile.Read(ref _version))
+                {
+                    _isLoading = false;
+                    NotifyStateChanged();
+                }
+            }).ConfigureAwait(false);
         }
         finally
         {

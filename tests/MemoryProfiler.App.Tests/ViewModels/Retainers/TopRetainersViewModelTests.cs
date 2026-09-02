@@ -138,6 +138,20 @@ public sealed class TopRetainersViewModelTests
     }
 
     [Fact]
+    public async Task CancelledResultSearchClearsLoadingState()
+    {
+        var viewModel = new TopRetainersViewModel(ImmediateUiDispatcher.Instance);
+        await using var _ = viewModel;
+        await viewModel.BeginLoadingAsync();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await viewModel.SetResultAsync(Result(100), cancellation.Token);
+
+        Assert.False(viewModel.IsLoading);
+    }
+
+    [Fact]
     public async Task OneMillionRetainersStayBoundedInTheMaterializedWindow()
     {
         var result = Result(1_000_000);

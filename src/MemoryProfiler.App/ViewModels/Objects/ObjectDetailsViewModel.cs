@@ -205,6 +205,7 @@ public sealed class ObjectDetailsViewModel : ViewModelBase, IAsyncDisposable
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
+            // Dominator metrics are optional; value loading owns the loading state.
         }
 
         try
@@ -214,7 +215,14 @@ public sealed class ObjectDetailsViewModel : ViewModelBase, IAsyncDisposable
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            // A newer selection, clear, or disposal superseded this load.
+            await PublishAsync(() =>
+            {
+                if (version == Volatile.Read(ref _objectVersion))
+                {
+                    _isLoadingValues = false;
+                    NotifyValueStateChanged();
+                }
+            }).ConfigureAwait(false);
         }
         catch (Exception exception)
         {
@@ -262,6 +270,26 @@ public sealed class ObjectDetailsViewModel : ViewModelBase, IAsyncDisposable
         }).ConfigureAwait(false);
     }
 
+    internal async Task SetDominatorResultAsync(DominatorAnalysisResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        var version = Volatile.Read(ref _objectVersion);
+        await PublishAsync(() =>
+        {
+            if (version == Volatile.Read(ref _objectVersion))
+            {
+                _dominatorResult = result;
+            }
+        }).ConfigureAwait(false);
+
+        if (version == Volatile.Read(ref _objectVersion))
+        {
+            var dominator = result.Dominators.FirstOrDefault(
+                item => item.ObjectAddress == _objectAddress);
+            await PublishRetainedAsync(version, dominator).ConfigureAwait(false);
+        }
+    }
+
     public ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -307,6 +335,8 @@ public sealed class ObjectDetailsViewModel : ViewModelBase, IAsyncDisposable
 
     private async Task PublishRetainedAsync(int version, DominatorInfo? dominator)
     {
+        dominator ??= _dominatorResult?.Dominators.FirstOrDefault(
+            item => item.ObjectAddress == _objectAddress);
         ulong totalReachable = 0;
         if (_dominatorResult is not null)
         {
@@ -385,6 +415,15 @@ public sealed class ObjectDetailsViewModel : ViewModelBase, IAsyncDisposable
 
         var version = Volatile.Read(ref _objectVersion);
         var nextOffset = _currentArrayOffset;
+        var token = _loadCancellation?.Token ?? CancellationToken.None;
+        await PublishAsync(() =>
+        {
+            if (version == Volatile.Read(ref _objectVersion))
+            {
+                _isLoadingValues = true;
+                NotifyValueStateChanged();
+            }
+        }).ConfigureAwait(false);
         try
         {
             var result = await _service.ReadAsync(
@@ -393,7 +432,7 @@ public sealed class ObjectDetailsViewModel : ViewModelBase, IAsyncDisposable
                 new ObjectValueReadOptions(
                     ArrayOffset: nextOffset,
                     ArrayLimit: ArrayPageSize,
-                    StringLimit: DefaultStringLimit)).ConfigureAwait(false);
+                    StringLimit: DefaultStringLimit), token).ConfigureAwait(false);
 
             await PublishAsync(() =>
             {
@@ -421,6 +460,17 @@ public sealed class ObjectDetailsViewModel : ViewModelBase, IAsyncDisposable
         {
             // The pane was disposed while the page was loading.
         }
+        finally
+        {
+            await PublishAsync(() =>
+            {
+                if (version == Volatile.Read(ref _objectVersion))
+                {
+                    _isLoadingValues = false;
+                    NotifyValueStateChanged();
+                }
+            }).ConfigureAwait(false);
+        }
     }
 
     private async Task ShowMoreStringsAsync()
@@ -433,6 +483,15 @@ public sealed class ObjectDetailsViewModel : ViewModelBase, IAsyncDisposable
         }
 
         var version = Volatile.Read(ref _objectVersion);
+        var token = _loadCancellation?.Token ?? CancellationToken.None;
+        await PublishAsync(() =>
+        {
+            if (version == Volatile.Read(ref _objectVersion))
+            {
+                _isLoadingValues = true;
+                NotifyValueStateChanged();
+            }
+        }).ConfigureAwait(false);
         try
         {
             var result = await _service.ReadAsync(
@@ -441,7 +500,7 @@ public sealed class ObjectDetailsViewModel : ViewModelBase, IAsyncDisposable
                 new ObjectValueReadOptions(
                     ArrayOffset: 0,
                     ArrayLimit: ArrayPageSize,
-                    StringLimit: ExpandedStringLimit)).ConfigureAwait(false);
+                    StringLimit: ExpandedStringLimit), token).ConfigureAwait(false);
 
             await PublishAsync(() =>
             {
@@ -469,6 +528,17 @@ public sealed class ObjectDetailsViewModel : ViewModelBase, IAsyncDisposable
         catch (ObjectDisposedException)
         {
             // The pane was disposed while the strings were being reloaded.
+        }
+        finally
+        {
+            await PublishAsync(() =>
+            {
+                if (version == Volatile.Read(ref _objectVersion))
+                {
+                    _isLoadingValues = false;
+                    NotifyValueStateChanged();
+                }
+            }).ConfigureAwait(false);
         }
     }
 

@@ -83,7 +83,13 @@ internal static class ClrMdHeapValueReader
         {
             cancellationToken.ThrowIfCancellationRequested();
             fields.Add(
-                ReadArrayElement(array, start + index, elementType, isReference, cancellationToken));
+                ReadArrayElement(
+                    array,
+                    start + index,
+                    elementType,
+                    componentType?.Name ?? string.Empty,
+                    isReference,
+                    cancellationToken));
         }
 
         var hasMore = start + count < length;
@@ -94,30 +100,31 @@ internal static class ClrMdHeapValueReader
         ClrArray array,
         int index,
         ClrElementType elementType,
+        string declaredTypeName,
         bool isReference,
         CancellationToken cancellationToken)
     {
         var name = $"[{index}]";
         if (isReference)
         {
-            return Reference(name, "System.Array", array.GetObjectValue(index));
+            return ArrayElementReference(name, declaredTypeName, array.GetObjectValue(index));
         }
 
         return elementType switch
         {
-            ClrElementType.Boolean => Primitive(name, array.GetValue<bool>(index)),
-            ClrElementType.Char => Character(name, array.GetValue<char>(index)),
-            ClrElementType.Int8 => Primitive(name, array.GetValue<sbyte>(index)),
-            ClrElementType.UInt8 => Primitive(name, array.GetValue<byte>(index)),
-            ClrElementType.Int16 => Primitive(name, array.GetValue<short>(index)),
-            ClrElementType.UInt16 => Primitive(name, array.GetValue<ushort>(index)),
-            ClrElementType.Int32 => Primitive(name, array.GetValue<int>(index)),
-            ClrElementType.UInt32 => Primitive(name, array.GetValue<uint>(index)),
-            ClrElementType.Int64 => Primitive(name, array.GetValue<long>(index)),
-            ClrElementType.UInt64 => Primitive(name, array.GetValue<ulong>(index)),
-            ClrElementType.Float => Primitive(name, array.GetValue<float>(index)),
-            ClrElementType.Double => Primitive(name, array.GetValue<double>(index)),
-            _ => Unavailable(name, "Unsupported value type"),
+            ClrElementType.Boolean => ArrayElementScalar(name, declaredTypeName, array.GetValue<bool>(index)),
+            ClrElementType.Char => ArrayElementScalar(name, declaredTypeName, HeapValueFormatting.Character(array.GetValue<char>(index))),
+            ClrElementType.Int8 => ArrayElementScalar(name, declaredTypeName, array.GetValue<sbyte>(index)),
+            ClrElementType.UInt8 => ArrayElementScalar(name, declaredTypeName, array.GetValue<byte>(index)),
+            ClrElementType.Int16 => ArrayElementScalar(name, declaredTypeName, array.GetValue<short>(index)),
+            ClrElementType.UInt16 => ArrayElementScalar(name, declaredTypeName, array.GetValue<ushort>(index)),
+            ClrElementType.Int32 => ArrayElementScalar(name, declaredTypeName, array.GetValue<int>(index)),
+            ClrElementType.UInt32 => ArrayElementScalar(name, declaredTypeName, array.GetValue<uint>(index)),
+            ClrElementType.Int64 => ArrayElementScalar(name, declaredTypeName, array.GetValue<long>(index)),
+            ClrElementType.UInt64 => ArrayElementScalar(name, declaredTypeName, array.GetValue<ulong>(index)),
+            ClrElementType.Float => ArrayElementScalar(name, declaredTypeName, array.GetValue<float>(index)),
+            ClrElementType.Double => ArrayElementScalar(name, declaredTypeName, array.GetValue<double>(index)),
+            _ => ArrayElementUnavailable(name, declaredTypeName, "Unsupported value type"),
         };
     }
 
@@ -537,6 +544,24 @@ internal static class ClrMdHeapValueReader
 
     private static HeapFieldValue Primitive(string name, object value) =>
         Field(name, string.Empty, HeapValueKind.Primitive, Invariant(value), null, null, false, null, null);
+
+    private static HeapFieldValue ArrayElementScalar(string name, string declaredTypeName, object value) =>
+        Field(name, declaredTypeName, HeapValueKind.ArrayElement, Invariant(value), null, null, false, null, null);
+
+    private static HeapFieldValue ArrayElementReference(string name, string declaredTypeName, ClrObject target) =>
+        Field(
+            name,
+            declaredTypeName,
+            HeapValueKind.ArrayElement,
+            null,
+            target.IsNull || !target.IsValid || target.IsFree || target.Address == 0 ? null : target.Address,
+            target.IsNull || !target.IsValid || target.IsFree || target.Address == 0 ? null : target.Type?.Name,
+            false,
+            null,
+            null);
+
+    private static HeapFieldValue ArrayElementUnavailable(string name, string declaredTypeName, string reason) =>
+        Field(name, declaredTypeName, HeapValueKind.ArrayElement, null, null, null, false, null, reason);
 
     private static HeapFieldValue Character(ClrInstanceField field, char value) =>
         Field(field, HeapValueKind.Primitive, HeapValueFormatting.Character(value), null, null, null);

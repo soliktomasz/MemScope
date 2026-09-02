@@ -78,8 +78,10 @@
       </Border>
     </Grid>
 
-    <Border Grid.Row="2"
+    <Border x:Name="ComparisonStatusBorder"
+            Grid.Row="2"
             Classes="subtle-surface"
+            IsVisible="{Binding ShowStatusOrResult}"
             Padding="14,10">
       <Grid RowDefinitions="Auto,Auto"
             RowSpacing="8">
@@ -144,6 +146,7 @@
                      Text="{Binding RetainedSizeNote}" />
         </StackPanel>
       </Grid>
+
       </Grid>
     </Border>
 
