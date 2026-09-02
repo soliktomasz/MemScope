@@ -36,6 +36,8 @@ jobs:
         run: dotnet build MemoryProfiler.sln --configuration Release --no-restore
 
       - name: Test
+        env:
+          MEMSCOPE_DIAG_ARTIFACT_DIR: ${{ github.workspace }}/artifacts
         run: dotnet test MemoryProfiler.sln --configuration Release --no-build
 
       # TEMPORARY CI DIAGNOSTICS: preserve captured acceptance dumps for local

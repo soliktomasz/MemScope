@@ -6,11 +6,12 @@ using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.Values;
 using MemoryProfiler.Contracts.Heap;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace MemoryProfiler.Analysis.Tests.Values;
 
 [Collection("Live diagnostics")]
-public sealed class ClrMdHeapObjectValueServiceAcceptanceTests
+public sealed class ClrMdHeapObjectValueServiceAcceptanceTests(ITestOutputHelper output)
 {
     [Fact]
     public async Task CapturedDumpDecodesControlledCacheProbeFields()
@@ -37,13 +38,13 @@ public sealed class ClrMdHeapObjectValueServiceAcceptanceTests
             // Windows decode failure can be reproduced locally. Remove before finalizing.
             try
             {
-                var artifactDir = Path.Combine(Directory.GetCurrentDirectory(), "artifacts");
+                var artifactDir =
+                    Environment.GetEnvironmentVariable("MEMSCOPE_DIAG_ARTIFACT_DIR")
+                    ?? Path.Combine(Directory.GetCurrentDirectory(), "artifacts");
                 Directory.CreateDirectory(artifactDir);
                 File.Copy(
                     destination,
-                    Path.Combine(
-                        artifactDir,
-                        $"memscope-{Environment.OSVersion.Platform}-{Environment.OSVersion.Version}.dmp"),
+                    Path.Combine(artifactDir, "memscope-windows.dmp"),
                     overwrite: true);
             }
             catch
@@ -61,6 +62,15 @@ public sealed class ClrMdHeapObjectValueServiceAcceptanceTests
 
             var service = new ClrMdHeapObjectValueService();
             var values = await service.ReadAsync(snapshot, probe.Address, new(), timeout.Token);
+
+            // TEMPORARY CI DIAGNOSTICS: per-field decode details for the failing Windows run.
+            // Remove before finalizing.
+            foreach (var field in values.Fields)
+            {
+                output.WriteLine(
+                    $"FIELD name={field.Name} kind={field.Kind} text={field.ValueText ?? "<null>"} " +
+                    $"reason={field.UnavailableReason ?? "-"} type={field.DeclaredTypeName}");
+            }
 
             Assert.Equal("42", Field(values, "Count").ValueText);
             Assert.Equal("True", Field(values, "Enabled").ValueText);
