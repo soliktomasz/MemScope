@@ -144,6 +144,11 @@ internal static class ClrMdHeapValueReader
                 return ReadEnum(field, obj);
             }
 
+            if (IsStringField(field))
+            {
+                return String(field, obj, options.StringLimit);
+            }
+
             return field.ElementType switch
             {
                 ClrElementType.Boolean => Primitive(field, obj.ReadField<bool>(field)),
@@ -174,6 +179,15 @@ internal static class ClrMdHeapValueReader
             return Unavailable(field, "Value could not be read");
         }
     }
+
+    // Windows minidumps can report string-typed instance fields as plain reference
+    // slots (ElementType Class or Object) while still resolving the declared type;
+    // full dumps report ElementType.String. Windows dumps also surface the type
+    // under its short name ("String") where full dumps say "System.String", so match
+    // both shapes before decoding the reference as a string.
+    private static bool IsStringField(ClrInstanceField field) =>
+        field.ElementType is ClrElementType.String or ClrElementType.Class or ClrElementType.Object &&
+        field.Type?.Name is "System.String" or "String";
 
     private static HeapFieldValue ReadEnum(ClrInstanceField field, ClrObject obj)
     {
@@ -309,8 +323,9 @@ internal static class ClrMdHeapValueReader
     // open generic definition: the "value" member is then a Class-typed placeholder
     // ("T") reported at offset 0 with the size of a reference, and hasValue is placed
     // after it. Reading through that ClrValueType therefore lands on the wrong bytes.
-    // The instance field offsets themselves stay accurate, so detect the degenerate
-    // shape and decode the raw field slot instead.
+    // Detect the degenerate shape and decode the raw field slot instead; ClrMD's own
+    // field addressing (GetAddress) keeps the slot base accurate even though the
+    // value-type model is not.
     private static bool IsDegenerateNullableLayout(ClrInstanceField? valueField) =>
         valueField is not null &&
         valueField.ElementType == ClrElementType.Class &&
@@ -322,12 +337,28 @@ internal static class ClrMdHeapValueReader
     {
         var heap = obj.Type?.Heap;
         var reader = heap?.Runtime.DataTarget.DataReader;
-        if (heap is null || reader is null || field.Offset < 0)
+        if (heap is null || reader is null)
         {
             return Unavailable(field, "Value could not be read");
         }
 
-        var slotAddress = obj.Address + (uint)field.Offset;
+        // ClrMD field offsets are relative to the object data (past the method
+        // table), so address the real slot through ClrMD instead of adding the raw
+        // offset to the object address; reading at obj.Address + Offset lands one
+        // pointer too early and decodes neighbouring bytes.
+        ulong slotAddress;
+        try
+        {
+            slotAddress = field.GetAddress(obj.Address, interior: false);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or
+                InvalidOperationException or
+                IOException or
+                ClrDiagnosticsException)
+        {
+            return Unavailable(field, "Value could not be read");
+        }
 
         // Real Nullable<T> instance-field layout: bool hasValue occupies the first
         // byte of the slot regardless of how ClrMD models the open generic.
@@ -344,9 +375,7 @@ internal static class ClrMdHeapValueReader
         var module = field.ContainingType?.Module;
         if (module is null ||
             module.IsDynamic ||
-            !module.IsPEFile ||
-            module.MetadataAddress == 0 ||
-            module.MetadataLength is 0 or > 64 * 1024 * 1024)
+            !module.IsPEFile)
         {
             return Unavailable(field, "Unsupported value type");
         }
@@ -504,6 +533,9 @@ internal static class ClrMdHeapValueReader
     // Resolves the element type that T stands for in a Nullable<T> field whose
     // ClrMD type came back as the open generic definition. The instance field's
     // signature in the owning module's metadata carries the closed generic argument.
+    // The captured process's metadata image is authoritative and used first; Windows
+    // minidumps often omit module image memory, so the module file on disk is tried
+    // as a fallback when it is still available (same-machine analysis).
     private static bool TryResolveNullableUnderlying(
         ClrInstanceField field,
         ClrModule module,
@@ -515,28 +547,156 @@ internal static class ClrMdHeapValueReader
         element = ClrElementType.Unknown;
         typeName = string.Empty;
         failure = null;
-        try
+
+        if (module.MetadataAddress != 0 &&
+            module.MetadataLength is > 0 and <= 64 * 1024 * 1024)
         {
-            var blob = new byte[module.MetadataLength];
-            if (ReadExactly(reader, module.MetadataAddress, blob) != blob.Length)
+            var dumpImage = new byte[module.MetadataLength];
+            if (ReadExactly(reader, module.MetadataAddress, dumpImage) != dumpImage.Length)
             {
                 failure = "Nullable metadata read failed";
-                return false;
             }
-
-            var metadataStart = FindMetadataRoot(blob);
-            if (metadataStart < 0)
+            else if (TryParseNullableFieldSignature(
+                field,
+                dumpImage,
+                verifyFieldName: false,
+                out element,
+                out typeName,
+                out failure))
             {
-                failure = "Nullable metadata root not found";
+                return true;
+            }
+        }
+
+        if (TryResolveNullableUnderlyingFromModuleFile(
+                field,
+                module,
+                out element,
+                out typeName,
+                out failure))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    // Reads the owning module's metadata image from the file the module was loaded
+    // from. Only used as a fallback for dumps that do not contain the module image
+    // (Windows minidumps); the resolved field must still match the ClrMD field name
+    // so an unrelated assembly at the same path is never trusted.
+    private static bool TryResolveNullableUnderlyingFromModuleFile(
+        ClrInstanceField field,
+        ClrModule module,
+        out ClrElementType element,
+        out string typeName,
+        out string? failure)
+    {
+        element = ClrElementType.Unknown;
+        typeName = string.Empty;
+        failure = null;
+
+        try
+        {
+            var path = module.Name;
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                failure = "Nullable module file unavailable";
                 return false;
             }
 
-            var handle = MetadataTokens.FieldDefinitionHandle(field.Token & 0x00FFFFFF);
+            var file = new FileInfo(path);
+            if (!file.Exists)
+            {
+                failure = "Nullable module file unavailable";
+                return false;
+            }
+
+            if (file.Length is <= 0 or > 512L * 1024 * 1024)
+            {
+                failure = "Nullable module file unavailable";
+                return false;
+            }
+
+            var image = File.ReadAllBytes(path);
+            return TryParseNullableFieldSignature(
+                field,
+                image,
+                verifyFieldName: true,
+                out element,
+                out typeName,
+                out failure);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or
+                IOException or
+                UnauthorizedAccessException or
+                NotSupportedException)
+        {
+            failure = "Nullable module file read failed";
+            return false;
+        }
+    }
+
+    private static bool TryParseNullableFieldSignature(
+        ClrInstanceField field,
+        byte[] metadataImage,
+        bool verifyFieldName,
+        out ClrElementType element,
+        out string typeName,
+        out string? failure) =>
+        TryParseNullableFieldSignature(
+            metadataImage,
+            field.Token & 0x00FFFFFF,
+            verifyFieldName ? field.Name : null,
+            out element,
+            out typeName,
+            out failure);
+
+    // Parses the closed Nullable<T> generic argument out of a field signature in a
+    // module metadata image. expectedFieldName is set when the image is not the one
+    // captured with the dump (module file fallback) so a stale or unrelated assembly
+    // at the same path is never trusted.
+    internal static bool TryParseNullableFieldSignature(
+        byte[] metadataImage,
+        int fieldToken,
+        string? expectedFieldName,
+        out ClrElementType element,
+        out string typeName,
+        out string? failure)
+    {
+        element = ClrElementType.Unknown;
+        typeName = string.Empty;
+        failure = null;
+
+        var metadataStart = FindMetadataRoot(metadataImage);
+        if (metadataStart < 0)
+        {
+            failure = "Nullable metadata root not found";
+            return false;
+        }
+
+        try
+        {
+            var handle = MetadataTokens.FieldDefinitionHandle(fieldToken);
             using var provider = MetadataReaderProvider.FromMetadataImage(
-                ImmutableArray.Create(blob, metadataStart, blob.Length - metadataStart));
+                ImmutableArray.Create(
+                    metadataImage,
+                    metadataStart,
+                    metadataImage.Length - metadataStart));
             var metadata = provider.GetMetadataReader();
 
             var fieldDefinition = metadata.GetFieldDefinition(handle);
+            if (expectedFieldName is not null &&
+                !string.Equals(
+                    metadata.GetString(fieldDefinition.Name),
+                    expectedFieldName,
+                    StringComparison.Ordinal))
+            {
+                failure = "Nullable metadata field mismatch";
+                return false;
+            }
+
             var signature = metadata.GetBlobReader(fieldDefinition.Signature);
             if (signature.ReadByte() != 0x06) // FIELD
             {
@@ -624,28 +784,156 @@ internal static class ClrMdHeapValueReader
     }
 
     // Some data readers report module metadata roots that start directly at the
-    // BSJB signature; be defensive and scan a little if a leading signature is absent.
-    private static int FindMetadataRoot(byte[] blob)
+    // BSJB signature, while module files and whole-image dumps embed the metadata
+    // inside a PE container. Locate the root through the PE CLI header when the
+    // image is a file, and scan a little as a last resort for reader layouts that
+    // expose neither.
+    private static int FindMetadataRoot(byte[] image)
     {
-        if (blob.Length >= 4 &&
-            blob[0] == 'B' && blob[1] == 'S' && blob[2] == 'J' && blob[3] == 'B')
+        if (image.Length >= 4 &&
+            image[0] == 'B' && image[1] == 'S' && image[2] == 'J' && image[3] == 'B')
         {
             return 0;
         }
 
-        var limit = Math.Min(blob.Length - 4, 4096);
+        var peRoot = TryFindPeMetadataRoot(image);
+        if (peRoot >= 0)
+        {
+            return peRoot;
+        }
+
+        var limit = Math.Min(image.Length - 4, 4096);
         for (var index = 0; index <= limit; index++)
         {
-            if (blob[index] == 'B' &&
-                blob[index + 1] == 'S' &&
-                blob[index + 2] == 'J' &&
-                blob[index + 3] == 'B')
+            if (image[index] == 'B' &&
+                image[index + 1] == 'S' &&
+                image[index + 2] == 'J' &&
+                image[index + 3] == 'B')
             {
                 return index;
             }
         }
 
         return -1;
+    }
+
+    // Walks the PE headers of an on-disk module image to the CLI metadata directory
+    // and maps its RVA back to a file offset. Returns -1 when the image is not a PE
+    // file or the metadata directory cannot be resolved.
+    private static int TryFindPeMetadataRoot(byte[] image)
+    {
+        if (image.Length < 0x40 ||
+            image[0] != (byte)'M' || image[1] != (byte)'Z')
+        {
+            return -1;
+        }
+
+        var peOffset = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(
+            image.AsSpan(0x3C, 4));
+        if (peOffset <= 0 ||
+            peOffset + 4 + 20 > image.Length ||
+            image[peOffset] != (byte)'P' ||
+            image[peOffset + 1] != (byte)'E' ||
+            image[peOffset + 2] != 0 ||
+            image[peOffset + 3] != 0)
+        {
+            return -1;
+        }
+
+        var coff = peOffset + 4;
+        var sectionCount = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
+            image.AsSpan(coff + 2, 2));
+        var optionalSize = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
+            image.AsSpan(coff + 16, 2));
+        var optional = coff + 20;
+        if (sectionCount == 0 || optionalSize < 2 || optional + optionalSize > image.Length)
+        {
+            return -1;
+        }
+
+        // Data directory offsets differ between the PE32 and PE32+ optional headers.
+        var magic = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(
+            image.AsSpan(optional, 2));
+        var directoryOffset = magic switch
+        {
+            0x10B => optional + 96,  // PE32
+            0x20B => optional + 112, // PE32+
+            _ => -1,
+        };
+        if (directoryOffset < 0 || directoryOffset + 14 * 8 + 8 > image.Length)
+        {
+            return -1;
+        }
+
+        var directoryCount = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(
+            image.AsSpan(directoryOffset - 4, 4));
+        if (directoryCount <= 14)
+        {
+            return -1;
+        }
+
+        // Data directory 14 is the CLI header; its metadata RVA points at the BSJB root.
+        var cliRva = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(
+            image.AsSpan(directoryOffset + 14 * 8, 4));
+        if (cliRva == 0)
+        {
+            return -1;
+        }
+
+        var sectionTable = optional + optionalSize;
+        int MapRva(uint rva)
+        {
+            for (var index = 0; index < sectionCount; index++)
+            {
+                var entry = sectionTable + index * 40;
+                if (entry + 40 > image.Length)
+                {
+                    return -1;
+                }
+
+                var virtualSize = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(
+                    image.AsSpan(entry + 8, 4));
+                var virtualAddress = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(
+                    image.AsSpan(entry + 12, 4));
+                var rawSize = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(
+                    image.AsSpan(entry + 16, 4));
+                var rawPointer = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(
+                    image.AsSpan(entry + 20, 4));
+                var mappedSize = Math.Min(virtualSize, rawSize);
+                if (rawPointer != 0 &&
+                    rva >= virtualAddress &&
+                    rva - virtualAddress < mappedSize &&
+                    rawPointer + (rva - virtualAddress) < image.Length)
+                {
+                    return (int)(rawPointer + (rva - virtualAddress));
+                }
+            }
+
+            return -1;
+        }
+
+        var cliOffset = MapRva(cliRva);
+        if (cliOffset < 0 || cliOffset + 16 > image.Length)
+        {
+            return -1;
+        }
+
+        // CLI header layout: cb(4) MajorRuntimeVersion(2) MinorRuntimeVersion(2)
+        // MetaData RVA(4) MetaData Size(4).
+        var metadataRva = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(
+            image.AsSpan(cliOffset + 8, 4));
+        var metadataRoot = MapRva(metadataRva);
+        if (metadataRoot < 0 ||
+            metadataRoot + 4 > image.Length ||
+            image[metadataRoot] != (byte)'B' ||
+            image[metadataRoot + 1] != (byte)'S' ||
+            image[metadataRoot + 2] != (byte)'J' ||
+            image[metadataRoot + 3] != (byte)'B')
+        {
+            return -1;
+        }
+
+        return metadataRoot;
     }
 
     private static bool TryReadByte(object reader, ulong address, out byte value)
