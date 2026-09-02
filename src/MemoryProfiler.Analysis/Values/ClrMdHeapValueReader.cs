@@ -144,6 +144,11 @@ internal static class ClrMdHeapValueReader
                 return ReadEnum(field, obj);
             }
 
+            if (IsStringField(field))
+            {
+                return String(field, obj, options.StringLimit);
+            }
+
             return field.ElementType switch
             {
                 ClrElementType.Boolean => Primitive(field, obj.ReadField<bool>(field)),
@@ -174,6 +179,13 @@ internal static class ClrMdHeapValueReader
             return Unavailable(field, "Value could not be read");
         }
     }
+
+    // Windows minidumps can report string-typed instance fields as plain reference
+    // slots (ElementType Class or Object) while still resolving the declared type
+    // name; full dumps report ElementType.String. Decode both shapes as strings.
+    private static bool IsStringField(ClrInstanceField field) =>
+        field.ElementType is ClrElementType.String or ClrElementType.Class or ClrElementType.Object &&
+        string.Equals(field.Type?.Name, "System.String", StringComparison.Ordinal);
 
     private static HeapFieldValue ReadEnum(ClrInstanceField field, ClrObject obj)
     {
