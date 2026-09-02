@@ -1,0 +1,414 @@
+name: Release
+
+# Publish a MemScope release.
+# Triggers:
+#   - pushing a tag like v0.1.0 (preferred flow, see release_script.sh)
+#   - manually with workflow_dispatch + a version input (creates the tag too)
+#
+# The version comes from the tag via MinVer (parsed from the build log), or from
+# the workflow_dispatch input when run manually. Code signing/notarization steps
+# only run when the matching repository secrets exist, so the workflow can be
+# exercised unsigned before certificates are configured.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 0.1.0)'
+        required: true
+        type: string
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  VELOPACK_VERSION: '1.0.1'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # Required for MinVer
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore src/MemoryProfiler.App/MemoryProfiler.App.csproj -r linux-x64
+
+      - name: Build and extract version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            BUILD_OUTPUT=$(dotnet build src/MemoryProfiler.App/MemoryProfiler.App.csproj -c Release -r linux-x64 --no-restore 2>&1)
+            echo "$BUILD_OUTPUT"
+            VERSION=$(echo "$BUILD_OUTPUT" | grep "MinVer: Calculated version" | sed -E 's/.*MinVer: Calculated version ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?).*/\1/' | head -1 || echo "0.0.0")
+          fi
+          if [ -z "$VERSION" ]; then VERSION="0.0.0"; fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Using version: $VERSION"
+
+      - name: Publish self-contained
+        run: |
+          dotnet publish src/MemoryProfiler.App/MemoryProfiler.App.csproj -c Release -r linux-x64 \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:EnableCompressionInSingleFile=true \
+            -p:UseAppHost=true \
+            -p:PublishReadyToRun=true \
+            -o ./publish
+
+      - name: Install Velopack CLI
+        run: dotnet tool install --global vpk --version ${{ env.VELOPACK_VERSION }}
+
+      - name: Download previous Velopack release assets
+        run: vpk download github --repoUrl https://github.com/${{ github.repository }} --channel linux-x64 --token ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Create Velopack package
+        env:
+          PACK_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          vpk pack \
+            --packId MemScope \
+            --packTitle MemScope \
+            --packAuthors MemScope \
+            --packVersion "$PACK_VERSION" \
+            --packDir ./publish \
+            --mainExe MemoryProfiler.App \
+            --runtime linux-x64 \
+            --channel linux-x64 \
+            --delta None \
+            --icon src/MemoryProfiler.App/Assets/generated/memscope-256.png
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: MemScope-${{ steps.version.outputs.version }}-linux-x64
+          path: Releases/**
+          retention-days: 30
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # Required for MinVer
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore src/MemoryProfiler.App/MemoryProfiler.App.csproj -r win-x64
+
+      - name: Build and extract version
+        id: version
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $VERSION = "${{ github.event.inputs.version }}"
+          } else {
+            $BUILD_OUTPUT = dotnet build src/MemoryProfiler.App/MemoryProfiler.App.csproj -c Release -r win-x64 --no-restore 2>&1 | Out-String
+            Write-Output $BUILD_OUTPUT
+            if ($BUILD_OUTPUT -match "MinVer: Calculated version ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?)") {
+              $VERSION = $matches[1]
+            } else {
+              $VERSION = "0.0.0"
+            }
+          }
+          if ([string]::IsNullOrEmpty($VERSION)) { $VERSION = "0.0.0" }
+          echo "version=$VERSION" >> $env:GITHUB_OUTPUT
+          Write-Output "Using version: $VERSION"
+
+      - name: Publish self-contained
+        run: |
+          dotnet publish src/MemoryProfiler.App/MemoryProfiler.App.csproj -c Release -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:UseAppHost=true `
+            -p:PublishReadyToRun=true `
+            -o ./publish
+
+      - name: Install Velopack CLI
+        run: dotnet tool install --global vpk --version ${{ env.VELOPACK_VERSION }}
+
+      - name: Download previous Velopack release assets
+        run: vpk download github --repoUrl https://github.com/${{ github.repository }} --channel win-x64 --token ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Create Velopack package
+        env:
+          PACK_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          vpk pack `
+            --packId MemScope `
+            --packTitle MemScope `
+            --packAuthors MemScope `
+            --packVersion "$env:PACK_VERSION" `
+            --packDir ./publish `
+            --mainExe MemoryProfiler.App.exe `
+            --runtime win-x64 `
+            --channel win-x64 `
+            --delta None `
+            --noPortable `
+            --icon src/MemoryProfiler.App/Assets/memscope.ico
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: MemScope-${{ steps.version.outputs.version }}-win-x64
+          path: Releases/**
+          retention-days: 30
+
+  build-macos:
+    strategy:
+      matrix:
+        include:
+          - runtime: osx-x64
+            arch: x64
+          - runtime: osx-arm64
+            arch: arm64
+
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # Required for MinVer
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies for runtime
+        run: dotnet restore src/MemoryProfiler.App/MemoryProfiler.App.csproj -r ${{ matrix.runtime }}
+
+      - name: Build and extract version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            BUILD_OUTPUT=$(dotnet build src/MemoryProfiler.App/MemoryProfiler.App.csproj -c Release -r ${{ matrix.runtime }} --no-restore 2>&1)
+            echo "$BUILD_OUTPUT"
+            VERSION=$(echo "$BUILD_OUTPUT" | grep "MinVer: Calculated version" | sed -E 's/.*MinVer: Calculated version ([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?).*/\1/' | head -1 || echo "0.0.0")
+          fi
+          if [ -z "$VERSION" ]; then VERSION="0.0.0"; fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Using version: $VERSION"
+
+      - name: Publish self-contained
+        run: |
+          dotnet publish src/MemoryProfiler.App/MemoryProfiler.App.csproj -c Release -r ${{ matrix.runtime }} \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:EnableCompressionInSingleFile=true \
+            -p:UseAppHost=true \
+            -o ./publish
+
+      - name: Generate macOS icon (icns)
+        run: |
+          mkdir -p icon.iconset
+          cp src/MemoryProfiler.App/Assets/generated/memscope-16.png icon.iconset/icon_16x16.png
+          cp src/MemoryProfiler.App/Assets/generated/memscope-32.png icon.iconset/icon_16x16@2x.png
+          cp src/MemoryProfiler.App/Assets/generated/memscope-32.png icon.iconset/icon_32x32.png
+          cp src/MemoryProfiler.App/Assets/generated/memscope-64.png icon.iconset/icon_32x32@2x.png
+          cp src/MemoryProfiler.App/Assets/generated/memscope-128.png icon.iconset/icon_128x128.png
+          cp src/MemoryProfiler.App/Assets/generated/memscope-256.png icon.iconset/icon_128x128@2x.png
+          cp src/MemoryProfiler.App/Assets/generated/memscope-256.png icon.iconset/icon_256x256.png
+          cp src/MemoryProfiler.App/Assets/generated/memscope-512.png icon.iconset/icon_256x256@2x.png
+          cp src/MemoryProfiler.App/Assets/generated/memscope-512.png icon.iconset/icon_512x512.png
+          cp src/MemoryProfiler.App/Assets/generated/memscope-1024.png icon.iconset/icon_512x512@2x.png
+          iconutil -c icns icon.iconset -o memscope.icns
+
+      - name: Install Velopack CLI
+        run: dotnet tool install --global vpk --version ${{ env.VELOPACK_VERSION }}
+
+      - name: Download previous Velopack release assets
+        run: vpk download github --repoUrl https://github.com/${{ github.repository }} --channel ${{ matrix.runtime }} --token ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      # Signing/notarization secrets (BUILD_CERTIFICATE_BASE64, INSTALLER_CERTIFICATE_BASE64,
+      # P12_PASSWORD, APPLE_ID, APPLE_PASSWORD, APPLE_TEAM, KEYCHAIN_PASSWORD) are optional.
+      # Without them the package is built unsigned; with them the app is Developer ID
+      # signed and notarized.
+      - name: Install Apple certificates and notary profile
+        if: ${{ secrets.BUILD_CERTIFICATE_BASE64 != '' }}
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          INSTALLER_CERTIFICATE_BASE64: ${{ secrets.INSTALLER_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM: ${{ secrets.APPLE_TEAM }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          CERT_BUILD_PATH=$RUNNER_TEMP/build_certificate.p12
+          CERT_INSTALLER_PATH=$RUNNER_TEMP/installer_certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          # import certificates from secrets
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERT_BUILD_PATH
+          echo -n "$INSTALLER_CERTIFICATE_BASE64" | base64 --decode -o $CERT_INSTALLER_PATH
+          # create temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          # import certificates to keychain
+          security import $CERT_BUILD_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security import $CERT_INSTALLER_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+          # create notarytool profile (for notarization)
+          xcrun notarytool store-credentials --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM" --password "$APPLE_PASSWORD" --keychain "$KEYCHAIN_PATH" velopack-profile
+
+      - name: Create Velopack package
+        env:
+          PACK_VERSION: ${{ steps.version.outputs.version }}
+          SIGN_APP_IDENTITY: "Developer ID Application: Tomasz Solik"
+          SIGN_INSTALL_IDENTITY: "Developer ID Installer: Tomasz Solik"
+        run: |
+          vpk_args=(pack \
+            --packId MemScope \
+            --packTitle MemScope \
+            --packAuthors MemScope \
+            --packVersion "$PACK_VERSION" \
+            --packDir ./publish \
+            --mainExe MemoryProfiler.App \
+            --runtime ${{ matrix.runtime }} \
+            --channel ${{ matrix.runtime }} \
+            --delta None \
+            --noPortable \
+            --icon memscope.icns)
+          if [ -f "$RUNNER_TEMP/app-signing.keychain-db" ]; then
+            vpk_args+=(--signAppIdentity "$SIGN_APP_IDENTITY" --signInstallIdentity "$SIGN_INSTALL_IDENTITY" --notaryProfile velopack-profile --keychain "$RUNNER_TEMP/app-signing.keychain-db")
+          fi
+          vpk "${vpk_args[@]}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: MemScope-${{ steps.version.outputs.version }}-${{ matrix.runtime }}
+          path: Releases/**
+          retention-days: 30
+
+      - name: Clean up keychain
+        if: ${{ always() && secrets.BUILD_CERTIFICATE_BASE64 != '' }}
+        run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db
+
+  create-release:
+    needs: [build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create tag for manual release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ format('v{0}', github.event.inputs.version) }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', github.event.inputs.version) || github.ref_name }}
+          generate_release_notes: true
+          update_release_body: true
+          draft: false
+          prerelease: ${{ contains(github.ref, 'preview') || contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') || contains(github.event.inputs.version, 'preview') || contains(github.event.inputs.version, 'alpha') || contains(github.event.inputs.version, 'beta') || contains(github.event.inputs.version, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Install Velopack CLI
+        run: dotnet tool install --global vpk --version ${{ env.VELOPACK_VERSION }}
+
+      - name: Upload Velopack packages
+        env:
+          TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', github.event.inputs.version) || github.ref_name }}
+          VPK_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          found_assets=0
+
+          while IFS= read -r assets_file; do
+            found_assets=1
+            releases_dir="$(dirname "$assets_file")"
+            artifact_dir="$(basename "$releases_dir")"
+            case "$artifact_dir" in
+              *win-x64*) channel="win-x64" ;;
+              *linux-x64*) channel="linux-x64" ;;
+              *osx-x64*) channel="osx-x64" ;;
+              *osx-arm64*) channel="osx-arm64" ;;
+              *) echo "Unknown Velopack artifact channel for $artifact_dir"; exit 1 ;;
+            esac
+
+            echo "Uploading Velopack assets for channel '$channel' from '$releases_dir':"
+            cat "$assets_file"
+
+            max_attempts=3
+            attempt=1
+            until vpk upload github \
+              --outputDir "$releases_dir" \
+              --repoUrl https://github.com/${{ github.repository }} \
+              --channel "$channel" \
+              --token "$VPK_TOKEN" \
+              --merge \
+              --publish \
+              --tag "$TAG"; do
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                echo "Velopack upload failed for channel '$channel' after ${max_attempts} attempts."
+                exit 1
+              fi
+              sleep_seconds=$((attempt * 15))
+              echo "Velopack upload failed for channel '$channel' (attempt ${attempt}/${max_attempts}). Retrying in ${sleep_seconds}s..."
+              sleep "$sleep_seconds"
+              attempt=$((attempt + 1))
+            done
+          done < <(find artifacts -type f -name 'assets.*.json' | sort)
+
+          if [ "$found_assets" -eq 0 ]; then
+            echo "No Velopack assets.*.json files found in downloaded artifacts."
+            find artifacts -maxdepth 3 -type f | sort
+            exit 1
+          fi

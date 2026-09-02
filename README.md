@@ -1,5 +1,7 @@
 # MemScope
 
+![Version](https://img.shields.io/badge/Version-0.1.0-blue)
+
 MemScope is a cross-platform desktop application for monitoring managed memory in running .NET processes.
 
 Built with .NET and Avalonia, it connects to a process through EventPipe and displays live runtime metrics without modifying the target application.
@@ -65,6 +67,10 @@ dotnet test MemoryProfiler.sln
 ```
 
 The solution separates the desktop UI, diagnostics integration, shared contracts, analysis, and storage into projects under `src/`. Tests mirror these projects under `tests/`.
+
+## Releases
+
+Release builds are versioned from git tags (MinVer, `v` prefix) and published for Windows, macOS, and Linux by the GitHub Actions **Release** workflow. See [RELEASE.md](RELEASE.md) for the process, or run `./release_script.sh 0.2.0` to cut a release.
 
 ## License
 

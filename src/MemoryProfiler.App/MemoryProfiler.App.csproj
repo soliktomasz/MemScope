@@ -6,6 +6,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets/memscope.ico</ApplicationIcon>
+
+    <!-- Application Metadata -->
+    <Product>MemScope</Product>
+    <Description>Cross-platform managed memory profiler for .NET processes</Description>
+
+    <!-- MinVer Configuration: derive version from git tags with a "v" prefix.
+         Until the first tag exists the version stays 0.1.x-preview.* with build height. -->
+    <MinVerTagPrefix>v</MinVerTagPrefix>
+    <MinVerMinimumMajorMinor>0.1</MinVerMinimumMajorMinor>
+    <MinVerDefaultPreReleaseIdentifiers>preview.0</MinVerDefaultPreReleaseIdentifiers>
+    <MinVerVerbosity>normal</MinVerVerbosity>
   </PropertyGroup>
   <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
@@ -21,6 +32,13 @@
     <PackageReference Include="Avalonia.Controls.DataGrid" Version="12.1.1" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- MinVer for automatic versioning from git tags -->
+    <PackageReference Include="MinVer" Version="7.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../MemoryProfiler.Contracts/MemoryProfiler.Contracts.csproj" />
