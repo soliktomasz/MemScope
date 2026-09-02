@@ -181,11 +181,13 @@ internal static class ClrMdHeapValueReader
     }
 
     // Windows minidumps can report string-typed instance fields as plain reference
-    // slots (ElementType Class or Object) while still resolving the declared type
-    // name; full dumps report ElementType.String. Decode both shapes as strings.
+    // slots (ElementType Class or Object) while still resolving the declared type;
+    // full dumps report ElementType.String. Windows dumps also surface the type
+    // under its short name ("String") where full dumps say "System.String", so match
+    // both shapes before decoding the reference as a string.
     private static bool IsStringField(ClrInstanceField field) =>
         field.ElementType is ClrElementType.String or ClrElementType.Class or ClrElementType.Object &&
-        string.Equals(field.Type?.Name, "System.String", StringComparison.Ordinal);
+        field.Type?.Name is "System.String" or "String";
 
     private static HeapFieldValue ReadEnum(ClrInstanceField field, ClrObject obj)
     {
