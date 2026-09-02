@@ -10,6 +10,8 @@
 // the line "LEAK" before growing an unbounded chunk list — so a before-dump captures
 // the baseline and an after-dump captures the baseline plus the controlled leak.
 
+using LiveDiagnosticsTarget;
+
 const int ChunkSize = 64 * 1024;
 const int BaselineChunkCount = 128;
 
@@ -52,6 +54,22 @@ if (args is ["--leak"])
     }
 }
 
+if (args is ["--object-values"])
+{
+    // Keep the complete graph behind an explicit static root so the captured
+    // dump always exposes exactly one controlled CacheProbe instance.
+    var probe = new CacheProbe();
+    ValueInspectionHolder.Probe = probe;
+
+    Console.Out.WriteLine("READY");
+    Console.Out.Flush();
+
+    while (true)
+    {
+        Thread.Sleep(100);
+    }
+}
+
 var allocations = LiveAllocationHolder.Chunks = [];
 Console.Out.WriteLine("READY");
 Console.Out.Flush();
@@ -72,4 +90,9 @@ while (true)
 internal static class LiveAllocationHolder
 {
     internal static List<byte[]>? Chunks;
+}
+
+internal static class ValueInspectionHolder
+{
+    internal static CacheProbe? Probe;
 }

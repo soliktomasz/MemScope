@@ -7,86 +7,33 @@
              x:DataType="vm:ComparisonViewModel"
              x:CompileBindings="True">
   <UserControl.Styles>
-    <Style Selector="TextBlock.dashboard-title">
-      <Setter Property="FontSize" Value="24" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
-    </Style>
-    <Style Selector="TextBlock.section-label">
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
-    </Style>
-    <Style Selector="TextBlock.secondary">
-      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
-    </Style>
-    <Style Selector="TextBlock.mono-data">
-      <Setter Property="FontFamily" Value="Cascadia Mono, Menlo, Consolas" />
-      <Setter Property="FontSize" Value="13" />
-      <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
-    </Style>
-    <Style Selector="TextBlock.table-header">
-      <Setter Property="Padding" Value="8,4" />
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
-    </Style>
-    <Style Selector="Button.dashboard-action">
-      <Setter Property="MinHeight" Value="36" />
-      <Setter Property="Padding" Value="15,7" />
-      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
-    <Style Selector="Button.table-header">
-      <Setter Property="MinHeight" Value="32" />
-      <Setter Property="Padding" Value="8,4" />
-      <Setter Property="HorizontalContentAlignment" Value="Left" />
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
-    </Style>
     <Style Selector="Border.picker-card">
-      <Setter Property="Padding" Value="16,12" />
-      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
-      <Setter Property="Background" Value="{DynamicResource AppSurfaceSubtleBrush}" />
-    </Style>
-    <Style Selector="ListBox.delta-list">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-    </Style>
-    <Style Selector="ListBox.delta-list ListBoxItem">
-      <Setter Property="MinHeight" Value="30" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-      <Setter Property="CornerRadius" Value="{DynamicResource AppCornerRadius}" />
+      <Setter Property="Padding" Value="18,14" />
     </Style>
   </UserControl.Styles>
 
-  <Grid Margin="32,26,32,28"
+  <Grid Margin="{DynamicResource AppPageMargin}"
         RowDefinitions="Auto,Auto,Auto,*"
         RowSpacing="16">
     <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="20">
       <StackPanel Spacing="4">
-        <TextBlock Classes="dashboard-title" Text="Compare Snapshots" />
+        <TextBlock Classes="view-title" Text="Compare Snapshots" />
         <TextBlock Classes="secondary"
                    FontSize="13"
                    Text="Pick a before and after snapshot to see per-type memory changes." />
       </StackPanel>
       <Button Grid.Column="1"
-              Classes="dashboard-action"
+              Classes="app-button subtle"
               VerticalAlignment="Top"
               Command="{Binding CloseCommand}"
               Content="Close" />
     </Grid>
 
     <Grid Grid.Row="1" ColumnDefinitions="*,Auto,*" ColumnSpacing="14">
-      <Border Classes="picker-card">
+      <Border Classes="surface picker-card">
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
           <StackPanel Spacing="5">
-            <TextBlock Classes="section-label" Text="BEFORE" />
+            <TextBlock Classes="section-label" Text="Before" />
             <TextBlock Classes="mono-data"
                        TextTrimming="CharacterEllipsis"
                        ToolTip.Tip="{Binding BeforePath}"
@@ -98,7 +45,7 @@
                        Text="No snapshot chosen" />
           </StackPanel>
           <Button Grid.Column="1"
-                  Classes="dashboard-action"
+                  Classes="app-button"
                   VerticalAlignment="Center"
                   Command="{Binding PickBeforeCommand}"
                   Content="Choose…" />
@@ -108,10 +55,10 @@
                  Classes="section-label"
                  VerticalAlignment="Center"
                  Text="→" />
-      <Border Grid.Column="2" Classes="picker-card">
+      <Border Grid.Column="2" Classes="surface picker-card">
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
           <StackPanel Spacing="5">
-            <TextBlock Classes="section-label" Text="AFTER" />
+            <TextBlock Classes="section-label" Text="After" />
             <TextBlock Classes="mono-data"
                        TextTrimming="CharacterEllipsis"
                        ToolTip.Tip="{Binding AfterPath}"
@@ -123,7 +70,7 @@
                        Text="No snapshot chosen" />
           </StackPanel>
           <Button Grid.Column="1"
-                  Classes="dashboard-action"
+                  Classes="app-button"
                   VerticalAlignment="Center"
                   Command="{Binding PickAfterCommand}"
                   Content="Choose…" />
@@ -131,9 +78,13 @@
       </Border>
     </Grid>
 
-    <Grid Grid.Row="2"
-          RowDefinitions="Auto,Auto"
-          RowSpacing="8">
+    <Border x:Name="ComparisonStatusBorder"
+            Grid.Row="2"
+            Classes="subtle-surface"
+            IsVisible="{Binding ShowStatusOrResult}"
+            Padding="14,10">
+      <Grid RowDefinitions="Auto,Auto"
+            RowSpacing="8">
       <StackPanel Grid.Row="0"
                   IsVisible="{Binding ShowProgress}"
                   Spacing="4"
@@ -146,7 +97,7 @@
         <TextBlock Classes="secondary"
                    FontSize="12"
                    Text="{Binding StatusText}" />
-        <Button Classes="dashboard-action"
+        <Button Classes="app-button"
                 HorizontalAlignment="Left"
                 AutomationProperties.Name="Cancel snapshot comparison"
                 Command="{Binding CancelCommand}"
@@ -173,7 +124,7 @@
                   AutomationProperties.Name="Disappeared types filter"
                   IsChecked="{Binding Table.ShowDisappearedTypes, Mode=TwoWay}" />
         <StackPanel Grid.Column="3" Spacing="5">
-          <TextBlock Classes="section-label" Text="MIN Δ" />
+          <TextBlock Classes="section-label" Text="Minimum delta" />
           <TextBox Width="110"
                    AutomationProperties.Name="Minimum delta filter"
                    PlaceholderText="e.g. 100 KB"
@@ -195,7 +146,9 @@
                      Text="{Binding RetainedSizeNote}" />
         </StackPanel>
       </Grid>
-    </Grid>
+
+      </Grid>
+    </Border>
 
     <Grid Grid.Row="3">
       <DataGrid AutomationProperties.Name="Type memory changes"
@@ -226,53 +179,56 @@
         </DataGrid.Columns>
       </DataGrid>
 
-      <StackPanel IsVisible="{Binding ShowChoosePrompt}"
-                  HorizontalAlignment="Center"
-                  VerticalAlignment="Center"
-                  AutomationProperties.Name="Choose snapshots to compare"
-                  AutomationProperties.LiveSetting="Polite"
-                  Spacing="6">
-        <TextBlock HorizontalAlignment="Center"
-                   FontWeight="SemiBold"
-                   Foreground="{DynamicResource AppTextPrimaryBrush}"
-                   Text="Choose a before and after snapshot" />
-        <TextBlock Classes="secondary"
-                   HorizontalAlignment="Center"
-                   FontSize="13"
-                   Text="Pick a dump captured before the change and one captured after." />
-      </StackPanel>
+      <Border IsVisible="{Binding ShowChoosePrompt}"
+              Classes="empty-state"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              AutomationProperties.Name="Choose snapshots to compare"
+              AutomationProperties.LiveSetting="Polite">
+        <StackPanel Spacing="6">
+          <TextBlock HorizontalAlignment="Center"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource AppTextPrimaryBrush}"
+                     Text="Choose a before and after snapshot" />
+          <TextBlock Classes="secondary"
+                     HorizontalAlignment="Center"
+                     Text="Pick a dump captured before the change and one captured after." />
+        </StackPanel>
+      </Border>
 
-      <StackPanel IsVisible="{Binding ShowNoChanges}"
-                  HorizontalAlignment="Center"
-                  VerticalAlignment="Center"
-                  AutomationProperties.Name="No type changes found"
-                  AutomationProperties.LiveSetting="Polite"
-                  Spacing="6">
-        <TextBlock HorizontalAlignment="Center"
-                   FontWeight="SemiBold"
-                   Foreground="{DynamicResource AppTextPrimaryBrush}"
-                   Text="No type changes found" />
-        <TextBlock Classes="secondary"
-                   HorizontalAlignment="Center"
-                   FontSize="13"
-                   Text="The two snapshots have identical type memory." />
-      </StackPanel>
+      <Border IsVisible="{Binding ShowNoChanges}"
+              Classes="empty-state"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              AutomationProperties.Name="No type changes found"
+              AutomationProperties.LiveSetting="Polite">
+        <StackPanel Spacing="6">
+          <TextBlock HorizontalAlignment="Center"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource AppTextPrimaryBrush}"
+                     Text="No type changes found" />
+          <TextBlock Classes="secondary"
+                     HorizontalAlignment="Center"
+                     Text="The two snapshots have identical type memory." />
+        </StackPanel>
+      </Border>
 
-      <StackPanel IsVisible="{Binding ShowNoFilteredDeltas}"
-                  HorizontalAlignment="Center"
-                  VerticalAlignment="Center"
-                  AutomationProperties.Name="No types match the filters"
-                  AutomationProperties.LiveSetting="Polite"
-                  Spacing="6">
-        <TextBlock HorizontalAlignment="Center"
-                   FontWeight="SemiBold"
-                   Foreground="{DynamicResource AppTextPrimaryBrush}"
-                   Text="No types match the filters" />
-        <TextBlock Classes="secondary"
-                   HorizontalAlignment="Center"
-                   FontSize="13"
-                   Text="Adjust or clear the filters above." />
-      </StackPanel>
+      <Border IsVisible="{Binding ShowNoFilteredDeltas}"
+              Classes="empty-state"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              AutomationProperties.Name="No types match the filters"
+              AutomationProperties.LiveSetting="Polite">
+        <StackPanel Spacing="6">
+          <TextBlock HorizontalAlignment="Center"
+                     FontWeight="SemiBold"
+                     Foreground="{DynamicResource AppTextPrimaryBrush}"
+                     Text="No types match the filters" />
+          <TextBlock Classes="secondary"
+                     HorizontalAlignment="Center"
+                     Text="Adjust or clear the filters above." />
+        </StackPanel>
+      </Border>
     </Grid>
   </Grid>
 </UserControl>

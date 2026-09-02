@@ -81,6 +81,7 @@ public sealed class ComparisonViewModelTests
         Assert.False(viewModel.HasAfter);
         Assert.False(viewModel.CompareCommand.CanExecute(null));
         Assert.True(viewModel.ShowChoosePrompt);
+        Assert.False(viewModel.ShowStatusOrResult);
 
         await viewModel.PickAfterAsync();
 
@@ -89,6 +90,7 @@ public sealed class ComparisonViewModelTests
         Assert.False(viewModel.IsLoading);
         Assert.False(viewModel.HasError);
         Assert.True(viewModel.ShowTable);
+        Assert.True(viewModel.ShowStatusOrResult);
         Assert.Equal(["before.dmp", "after.dmp"], loader.LoadedPaths);
 
         // Biggest growth first: System.Byte[] grew by 20 MB, MyApp.Cache is
@@ -118,6 +120,7 @@ public sealed class ComparisonViewModelTests
         Assert.False(viewModel.HasBefore);
         Assert.False(viewModel.HasCompared);
         Assert.True(viewModel.ShowChoosePrompt);
+        Assert.False(viewModel.ShowStatusOrResult);
         Assert.Equal(1, picker.PickCount);
     }
 
@@ -172,6 +175,7 @@ public sealed class ComparisonViewModelTests
         await viewModel.LoadAsync("before.dmp", "after.dmp");
 
         Assert.True(viewModel.HasError);
+        Assert.True(viewModel.ShowStatusOrResult);
         Assert.Equal(0, callbackCount);
     }
 

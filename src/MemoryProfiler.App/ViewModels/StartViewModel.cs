@@ -7,6 +7,7 @@ using MemoryProfiler.Analysis.Loading;
 using MemoryProfiler.Analysis.Objects;
 using MemoryProfiler.Analysis.References;
 using MemoryProfiler.Analysis.Roots;
+using MemoryProfiler.Analysis.Values;
 using MemoryProfiler.App.Services;
 using MemoryProfiler.App.Errors;
 using MemoryProfiler.Diagnostics.Dumps;
@@ -27,6 +28,7 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
     private readonly IObjectReferenceService? _referenceService;
     private readonly IGcRootService? _gcRootService;
     private readonly IDominatorTreeService? _dominatorService;
+    private readonly IHeapObjectValueService? _objectValueService;
     private readonly ISnapshotComparisonService? _comparisonService;
     private readonly IDumpFilePicker? _dumpFilePicker;
     private readonly ISessionRepository? _sessionRepository;
@@ -95,7 +97,8 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         IDominatorTreeService? dominatorService = null,
         ISnapshotComparisonService? comparisonService = null,
         ISessionRepository? sessionRepository = null,
-        IClipboardService? clipboardService = null)
+        IClipboardService? clipboardService = null,
+        IHeapObjectValueService? objectValueService = null)
     {
         ArgumentNullException.ThrowIfNull(processPicker);
         ArgumentNullException.ThrowIfNull(sessionFactory);
@@ -111,6 +114,7 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
         _referenceService = referenceService;
         _gcRootService = gcRootService;
         _dominatorService = dominatorService;
+        _objectValueService = objectValueService;
         _comparisonService = comparisonService;
         _sessionRepository = sessionRepository;
         _clipboardService = clipboardService;
@@ -132,7 +136,8 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
                   _objectRepository is not null &&
                   _referenceService is not null &&
                   _gcRootService is not null &&
-                  _dominatorService is not null);
+                  _dominatorService is not null &&
+                  _objectValueService is not null);
         _compareSnapshotsCommand = new AsyncCommand(
             ShowComparisonAsync,
             () => Comparison is null &&
@@ -479,7 +484,8 @@ public sealed class StartViewModel : ViewModelBase, IDisposable, IAsyncDisposabl
             _uiDispatcher,
             CloseSnapshotAsync,
             _dominatorService,
-            _clipboardService);
+            _clipboardService,
+            _objectValueService);
         Snapshot = snapshot;
         await snapshot.LoadAsync(path, cancellationToken);
         if (snapshot.SnapshotInfo is { } info)

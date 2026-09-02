@@ -97,6 +97,34 @@ public sealed class InvestigationNavigationServiceTests
     }
 
     [Fact]
+    public void ObjectDetailsLocationSitsBetweenTypesAndReferencesInHistory()
+    {
+        var navigation = new InvestigationNavigationService();
+        var details = new ObjectDetailsLocation(0x2000, "MyApp.Cache");
+
+        navigation.Navigate(new TypeLocation(0x1000));
+        navigation.Navigate(details);
+        navigation.Navigate(new ObjectReferencesLocation(
+            0x2000, "MyApp.Cache", ReferenceDirection.Outgoing));
+
+        navigation.GoBack();
+        Assert.Equal(details, navigation.CurrentLocation);
+        Assert.True(navigation.CanGoBack);
+    }
+
+    [Fact]
+    public void ObjectDetailsLocationCarriesOnlyAddressAndTypeName()
+    {
+        var properties = typeof(ObjectDetailsLocation)
+            .GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+            .Select(property => property.Name)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        Assert.Equal(["ObjectAddress", "ObjectTypeName"], properties);
+    }
+
+    [Fact]
     public void RepeatedNavigationReleasesResetHistoryAndKeepsMemoryBounded()
     {
         var navigation = new InvestigationNavigationService();

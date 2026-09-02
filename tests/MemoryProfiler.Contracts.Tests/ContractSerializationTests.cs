@@ -43,7 +43,26 @@ public sealed class ContractSerializationTests
         new MemoryMetrics(new DateTimeOffset(2026, 8, 28, 12, 0, 1, TimeSpan.Zero),
             8_192, 1_024, 2_048, 3_072, 4_096, 512, 128.5, 1, 2, 3, 512),
         new GcEvent(new DateTimeOffset(2026, 8, 28, 12, 0, 2, TimeSpan.Zero),
-            2, TimeSpan.FromMilliseconds(12), 9_000, 6_000, "Induced")
+            2, TimeSpan.FromMilliseconds(12), 9_000, 6_000, "Induced"),
+        new HeapFieldValue(
+            "_name",
+            "System.String",
+            HeapValueKind.String,
+            "cache-a",
+            null,
+            null,
+            IsTruncated: false,
+            TotalLength: 7,
+            UnavailableReason: null),
+        new HeapObjectValueResult(
+            new HeapObjectInfo(0x2000, 0x1000, "Example.Cache", 64, "Gen2"),
+            [
+                new HeapFieldValue(
+                    "_count", "System.Int32", HeapValueKind.Primitive, "42",
+                    null, null, false, null, null),
+            ],
+            TotalFieldOrElementCount: 1,
+            HasMoreElements: false)
     };
 
     [Theory]
@@ -85,6 +104,44 @@ public sealed class ContractSerializationTests
             "Static field",
             "MyApp.Program._cache",
             []);
+
+        Assert.Equal(left, right);
+        Assert.Equal(left.GetHashCode(), right.GetHashCode());
+        Assert.NotEqual(left, different);
+    }
+
+    [Fact]
+    public void HeapObjectValueResultEqualityComparesFieldsStructurally()
+    {
+        var left = new HeapObjectValueResult(
+            new HeapObjectInfo(0x2000, 0x1000, "Example.Cache", 64, "Gen2"),
+            [
+                new HeapFieldValue("_count", "System.Int32", HeapValueKind.Primitive, "42",
+                    null, null, false, null, null),
+                new HeapFieldValue("_name", "System.String", HeapValueKind.String, "cache-a",
+                    null, null, false, 7, null),
+            ],
+            TotalFieldOrElementCount: 2,
+            HasMoreElements: false);
+        var right = new HeapObjectValueResult(
+            new HeapObjectInfo(0x2000, 0x1000, "Example.Cache", 64, "Gen2"),
+            new List<HeapFieldValue>
+            {
+                new("_count", "System.Int32", HeapValueKind.Primitive, "42",
+                    null, null, false, null, null),
+                new("_name", "System.String", HeapValueKind.String, "cache-a",
+                    null, null, false, 7, null),
+            },
+            TotalFieldOrElementCount: 2,
+            HasMoreElements: false);
+        var different = new HeapObjectValueResult(
+            new HeapObjectInfo(0x2000, 0x1000, "Example.Cache", 64, "Gen2"),
+            [
+                new HeapFieldValue("_count", "System.Int32", HeapValueKind.Primitive, "42",
+                    null, null, false, null, null),
+            ],
+            TotalFieldOrElementCount: 1,
+            HasMoreElements: false);
 
         Assert.Equal(left, right);
         Assert.Equal(left.GetHashCode(), right.GetHashCode());

@@ -1,5 +1,6 @@
 using Microsoft.Diagnostics.Runtime;
 using Microsoft.Diagnostics.Runtime.DataReaders.Implementation;
+using MemoryProfiler.Analysis.Values;
 using MemoryProfiler.Contracts.Heap;
 
 namespace MemoryProfiler.Analysis.Loading;
@@ -162,6 +163,12 @@ internal interface IHeapDumpSource : IDisposable
         CancellationToken cancellationToken);
 
     IEnumerable<ClrRootData> EnumerateRoots(CancellationToken cancellationToken);
+
+    HeapObjectValueResult ReadObjectValues(
+        ulong objectAddress,
+        ObjectValueReadOptions options,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException("Heap object value inspection is unavailable.");
 }
 
 internal readonly record struct ClrRootData(
@@ -498,6 +505,12 @@ internal sealed class ClrMdHeapDumpSource : IHeapDumpSource
             ClrRootKind.SizedRefHandle => "Sized ref handle",
             _ => "GC root",
         };
+
+    public HeapObjectValueResult ReadObjectValues(
+        ulong objectAddress,
+        ObjectValueReadOptions options,
+        CancellationToken cancellationToken) =>
+        ClrMdHeapValueReader.Read(_runtime, objectAddress, options, cancellationToken);
 
     public void Dispose() => _dataTarget.Dispose();
 

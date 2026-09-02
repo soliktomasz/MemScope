@@ -2,6 +2,13 @@ using System.Diagnostics;
 
 namespace MemoryProfiler.Analysis.Tests;
 
+internal enum LiveTargetMode
+{
+    Default,
+    LeakPhase,
+    ObjectValues,
+}
+
 internal sealed class LiveTargetFixture : IAsyncDisposable
 {
     private readonly Process _process;
@@ -17,13 +24,16 @@ internal sealed class LiveTargetFixture : IAsyncDisposable
     public string SocketRoot { get; }
 
     public static Task<LiveTargetFixture> StartAsync() =>
-        StartAsync(leakPhase: false);
+        StartAsync(LiveTargetMode.Default);
 
     // Leak phase arms the target for the snapshot-comparison acceptance test:
     // it pre-allocates a fixed baseline chunk set, signals READY, then blocks on
     // stdin until StartLeakAsync sends the "LEAK" signal. A before-dump captured
     // right after StartAsync therefore contains exactly the baseline.
-    public static async Task<LiveTargetFixture> StartAsync(bool leakPhase)
+    public static Task<LiveTargetFixture> StartAsync(bool leakPhase) =>
+        StartAsync(leakPhase ? LiveTargetMode.LeakPhase : LiveTargetMode.Default);
+
+    public static async Task<LiveTargetFixture> StartAsync(LiveTargetMode mode)
     {
         var socketRoot = ResolveShortSocketRoot();
         var targetAssembly = Path.Combine(
@@ -33,13 +43,17 @@ internal sealed class LiveTargetFixture : IAsyncDisposable
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            RedirectStandardInput = leakPhase,
+            RedirectStandardInput = mode == LiveTargetMode.LeakPhase,
             UseShellExecute = false,
         };
         startInfo.ArgumentList.Add(targetAssembly);
-        if (leakPhase)
+        if (mode == LiveTargetMode.LeakPhase)
         {
             startInfo.ArgumentList.Add("--leak");
+        }
+        else if (mode == LiveTargetMode.ObjectValues)
+        {
+            startInfo.ArgumentList.Add("--object-values");
         }
 
         startInfo.Environment["TMPDIR"] = socketRoot;
